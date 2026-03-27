@@ -1,0 +1,14 @@
+requests>=2.31.0
+supabase>=2.0.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+
+# Training data (generacion de Parquet)
+pandas>=2.0.0
+pyarrow>=12.0.0
+
+# Scraping (solo necesario para ingesta de posesion)
+beautifulsoup4>=4.12.0
+undetected-chromedriver>=3.5.0

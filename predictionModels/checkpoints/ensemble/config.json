@@ -1,0 +1,54 @@
+{
+  "naive_bayes": {
+    "n_clusters": 5,
+    "percentiles": [
+      25,
+      50,
+      75
+    ]
+  },
+  "regression": {
+    "regularization": 0.01,
+    "intercept_init": 3.2,
+    "referee_offset_reference": 26.0,
+    "use_extended_features": true,
+    "use_ref_team_features": true,
+    "use_context_features": true
+  },
+  "anfis": {
+    "n_membership_functions": 3,
+    "lr": 0.005,
+    "epochs": 150,
+    "batch_size": 64,
+    "use_market_context": true,
+    "output_center": 25.0,
+    "output_scale": 18.0,
+    "output_tanh_temp": 4.0,
+    "match_intensity_weights": [
+      0.25,
+      0.2,
+      0.25,
+      0.15,
+      0.15
+    ],
+    "play_style_weights": [
+      0.4,
+      0.35,
+      0.25
+    ]
+  },
+  "gating_network": {
+    "hidden_dims": [
+      48,
+      24
+    ],
+    "dropout": 0.15,
+    "temperature": 1.0,
+    "lr": 0.001,
+    "min_weight": 0.03,
+    "prior_mix": 0.45
+  },
+  "reconciliation": {
+    "total_variance_scale": 0.6
+  }
+}

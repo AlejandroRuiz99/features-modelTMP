@@ -1,0 +1,182 @@
+[
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.45,
+    "match_intensity_weights": [
+      0.25,
+      0.2,
+      0.25,
+      0.15,
+      0.15
+    ],
+    "mae": 3.3651053429058515,
+    "bias": 0.6275213275600501,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.6,
+    "match_intensity_weights": [
+      0.25,
+      0.2,
+      0.25,
+      0.15,
+      0.15
+    ],
+    "mae": 3.3651053429058515,
+    "bias": 0.6275213275600501,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.75,
+    "match_intensity_weights": [
+      0.25,
+      0.2,
+      0.25,
+      0.15,
+      0.15
+    ],
+    "mae": 3.3651053429058515,
+    "bias": 0.6275213275600501,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.45,
+    "match_intensity_weights": [
+      0.2,
+      0.2,
+      0.3,
+      0.15,
+      0.15
+    ],
+    "mae": 3.366708949026467,
+    "bias": 0.5874387639205871,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.6,
+    "match_intensity_weights": [
+      0.2,
+      0.2,
+      0.3,
+      0.15,
+      0.15
+    ],
+    "mae": 3.366708949026467,
+    "bias": 0.5874387639205871,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.75,
+    "match_intensity_weights": [
+      0.2,
+      0.2,
+      0.3,
+      0.15,
+      0.15
+    ],
+    "mae": 3.366708949026467,
+    "bias": 0.5874387639205871,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.45,
+    "match_intensity_weights": [
+      0.3,
+      0.2,
+      0.2,
+      0.15,
+      0.15
+    ],
+    "mae": 3.376090246660516,
+    "bias": 0.6207415744902626,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.6,
+    "match_intensity_weights": [
+      0.3,
+      0.2,
+      0.2,
+      0.15,
+      0.15
+    ],
+    "mae": 3.376090246660516,
+    "bias": 0.6207415744902626,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.75,
+    "match_intensity_weights": [
+      0.3,
+      0.2,
+      0.2,
+      0.15,
+      0.15
+    ],
+    "mae": 3.376090246660516,
+    "bias": 0.6207415744902626,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.45,
+    "match_intensity_weights": [
+      0.2,
+      0.25,
+      0.25,
+      0.15,
+      0.15
+    ],
+    "mae": 3.382129951855579,
+    "bias": 0.610239378362991,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.6,
+    "match_intensity_weights": [
+      0.2,
+      0.25,
+      0.25,
+      0.15,
+      0.15
+    ],
+    "mae": 3.382129951855579,
+    "bias": 0.610239378362991,
+    "n_pred": 100
+  },
+  {
+    "prior_mix": 0.25,
+    "min_weight": 0.1,
+    "variance_scale": 0.75,
+    "match_intensity_weights": [
+      0.2,
+      0.25,
+      0.25,
+      0.15,
+      0.15
+    ],
+    "mae": 3.382129951855579,
+    "bias": 0.610239378362991,
+    "n_pred": 100
+  }
+]

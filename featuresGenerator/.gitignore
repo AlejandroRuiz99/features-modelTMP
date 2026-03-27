@@ -1,0 +1,40 @@
+# Credenciales y configuración local (NUNCA subir)
+.env
+
+# Resultados generados (JSON + Markdown)
+results/
+
+# Artefactos de datos anteriores
+fixture_mapping.json
+enricher_skips.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+nul
+
+# Next.js / UI
+ui/node_modules/
+ui/.next/
+ui/out/
+ui/.vercel/
+ui/.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

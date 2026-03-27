@@ -1,0 +1,64 @@
+# =============================================================================
+# CONFIGURACIÓN DEL MODELO DE AGRESIVIDAD — LA LIGA
+# =============================================================================
+
+# Temporadas a descargar de football-data.co.uk
+# 2023 → 23/24, 2024 → 24/25, 2025 → 25/26
+seasons:
+  - 2023
+  - 2024
+  - 2025
+
+# Decay temporal
+# λ=0.003 → un partido de hace ~1 año pesa ~33 % menos que uno de hoy
+decay_lambda: 0.003
+
+# Pesos de cada estadística en el índice de agresividad (orientado a volumen)
+# Nota: la roja no se usa como "intensidad" fuerte; se deja muy baja porque
+# aquí interesa volumen de contactos/faltas, no severidad disciplinaria.
+pesos:
+  faltas: 1.0
+  amarillas: 0.35
+  rojas: 0.0
+
+# Umbrales de riesgo disciplinario (IAP)
+umbrales:
+  alto_riesgo: 7.0
+  critico: 8.5
+
+# xFouls: coeficiente de presión de tarjetas
+# 0.0 = ignorar el efecto ; 0.50 calibrado por walk-forward histórico
+# autorregulación cuando el equipo se carga de tarjetas.
+alpha_card_pressure: 0.50
+
+# ── Knowledge Pack ────────────────────────────────────────────────────────────
+
+# Ventana de forma reciente (nº de partidos)
+forma_ventana: 5
+
+# Factor de ventaja local en goles esperados
+# Calibrado walk-forward: bias_local=-0.156 con 1.07 -> 1.18 elimina el sesgo
+# (ratio HOME/AWAY = 1.18/0.82 = 1.44 ~= ratio real LaLiga 1.54/1.09 = 1.41)
+home_goals_factor: 1.18
+
+# Jornadas totales en la temporada (LaLiga)
+jornadas_laliga: 38
+
+# Umbrales para clasificar ritmo físico y ofensivo del partido
+umbrales_match:
+  fisico_muy_alto: 28.0
+  fisico_alto: 24.0
+  fisico_normal: 20.0
+  ofensivo_muy_abierto: 26.0
+  ofensivo_abierto: 22.0
+  ofensivo_equilibrado: 17.0
+
+# Umbral de divergencia modelo-mercado (alignment_score)
+market_alignment_threshold: 0.60
+
+# Agresividad por volumen esperado:
+# combina xFouls + contribución secundaria por tarjetas esperadas.
+agresividad_volumen:
+  peso_faltas: 1.0
+  peso_amarillas: 0.10
+  peso_rojas: 0.00

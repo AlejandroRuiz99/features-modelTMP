@@ -1,0 +1,117 @@
+# ============================================================
+# MODELO PREDICCION FALTAS - LA LIGA
+# Configuracion central de hiperparametros
+# ============================================================
+
+# --- VENTANA TEMPORAL ---
+# Numero de temporadas previas usadas para entrenar cada prediccion
+rolling_window_seasons: 2
+# Temporadas solo para inicializar estadisticas (no se predicen)
+warmup_seasons: ["2010-11", "2011-12"]
+
+# --- INTERVALOS DE FALTAS (variable objetivo discretizada) ---
+foul_intervals:
+  # Numero de clases ordinales en que se divide el total de faltas
+  n_intervals: 4
+  # Percentiles historicos que definen los cortes (P25, P50, P75)
+  # Resultado tipico: [0-25], [25-30], [30-35], [35+]
+  percentiles: [25, 50, 75]
+
+# --- MODULO 0: PERFILES BIMODALES DE ARBITROS (GMM) ---
+referee_gmm:
+  # Componentes de la mezcla gaussiana (2 = permisivo + estricto)
+  n_components: 2
+  # Partidos minimos para fitar un GMM independiente por arbitro;
+  # por debajo de este umbral se aplica shrinkage hacia la media global
+  min_matches_standalone: 15
+  # Fuerza del shrinkage (0 = solo datos locales, 1 = copia global completa)
+  shrinkage_strength: 0.3
+  # Decaimiento temporal en el fit GMM (ver model/core/referee_gmm.py)
+  decay_lambda_per_day: 0.003
+  # MLP que predice P(modo estricto) dado el contexto del partido
+  # (9 entradas: derby, rank, fase, top, peso GMM, agresividad, urgencia media,
+  #  ref_pair_delta_sum, pace normalizado)
+  mode_selector:
+    hidden_dims: [24, 12]   # capas ocultas (mas capacidad por mas features)
+    dropout: 0.1            # regularizacion
+    lr: 0.001               # learning rate
+
+# --- CAPA 1: NAIVE BAYES (basada en paper Perez-Blanco 2025) ---
+naive_bayes:
+  # Numero de clusters para agrupar los 20 equipos por media de faltas
+  n_clusters: 5
+  # Equipos por cluster (20 equipos / 5 clusters)
+  teams_per_cluster: 4
+  # Metodo de discretizacion: distancia relativa a centroides (Eq. 9-10 del paper)
+  discretization: "relative_distance"
+
+# --- CAPA 2: REGRESION ESTADISTICA ---
+regression:
+  # Familia de distribucion (neg_bin captura sobredispersion real de faltas)
+  family: "negative_binomial"
+  # Funcion de enlace: mu = exp(X*beta)
+  link: "log"
+  # Penalizacion L2 sobre coeficientes (evita overfitting)
+  regularization: 0.01
+
+# --- CAPA 3: ANFIS TAKAGI-SUGENO (logica borrosa + red neuronal) ---
+anfis:
+  # Funciones de pertenencia gaussianas por variable (aprendibles por backprop)
+  n_membership_functions: 3
+  linguistic_labels: ["low", "medium", "high"]
+  # Variables linguisticas de entrada al sistema fuzzy
+  input_variables:
+    - "home_aggressiveness"   # faltas + tarjetas del local
+    - "away_aggressiveness"   # faltas + tarjetas del visitante
+    - "match_intensity"       # derby + diferencia de ranking
+    - "play_style"            # posesion vs juego directo
+    - "referee_mode"          # P(estricto) del GMM
+  hidden_dim: 32              # dimension interna (no usado directamente, reservado)
+  lr: 0.005                   # learning rate de PyTorch
+  epochs: 200                 # epocas de entrenamiento
+  batch_size: 64              # tamano de batch
+
+# --- META-CAPA: GATING NETWORK (pesos dinamicos) ---
+gating_network:
+  # MLP que genera los pesos [w_bayes, w_regresion, w_anfis]
+  hidden_dims: [32, 16]       # dos capas ocultas
+  n_layers: 3                 # numero de capas predictivas a combinar
+  dropout: 0.15               # regularizacion
+  lr: 0.001                   # learning rate
+  # Temperatura del softmax: 1.0 = normal, >1 = pesos mas uniformes, <1 = mas polarizados
+  temperature: 1.0
+
+# --- ENSEMBLE (combinacion final) ---
+ensemble:
+  # Soporte de la PMF: P(F=k) para k = 0, 1, ..., 60
+  pmf_max_k: 61
+  # Metodo de combinacion: mezcla ponderada por los pesos del gating
+  combination: "weighted_mixture"
+
+# --- CALIBRACION HIBRIDA (modelo puro vs calibrado) ---
+calibration:
+  # Isotonic regression sobre la CDF (mejor que Platt para distribuciones completas)
+  method: "isotonic"
+  # Cada cuantas jornadas se re-entrena el calibrador
+  recalibrate_every_n_matchdays: 5
+  # Minimo de partidos observados antes de activar la calibracion
+  min_calibration_samples: 100
+
+# --- DETECCION DE EV+ (señales de apuestas) ---
+ev_detection:
+  # Edge minimo sobre la probabilidad implicita para generar senal (3%)
+  min_edge: 0.03
+  # Fraccion Kelly minima para considerar la apuesta
+  min_kelly: 0.01
+  # Tope de exposicion por apuesta (15% del bankroll)
+  max_kelly: 0.15
+  # Kelly fraccionario: se apuesta solo el 25% del Kelly completo (reduce varianza)
+  bankroll_fraction: 0.25
+
+# --- BACKTESTING TEMPORAL ---
+backtest:
+  # Primera temporada de test (las anteriores son warmup + entrenamiento)
+  start_season: "2012-13"
+  # Metricas calculadas en cada temporada de backtest
+  # rps = ordinal, crps = continua, brier = binaria O/U, log_loss = probabilistica
+  metrics: ["rps", "crps", "brier", "log_loss"]

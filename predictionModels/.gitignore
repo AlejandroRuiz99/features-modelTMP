@@ -1,0 +1,13 @@
+.env
+data/raw/
+data/processed/
+data/referee_profiles/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.DS_Store
+Thumbs.db

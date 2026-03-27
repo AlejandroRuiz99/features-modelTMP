@@ -1,0 +1,262 @@
+# features.yaml — Configuracion de features del pipeline KDD
+#
+# -----------------------------------------------------------------------
+# ADVERTENCIA: Los grupos marcados como type: base son la fuente primaria
+# de datos del pipeline. NO los desactives si hay grupos de tipo "derived"
+# que dependan de ellos (indicado en depends_on). El sistema lanzara una
+# advertencia de validacion al arrancar si detecta inconsistencias.
+# -----------------------------------------------------------------------
+#
+# Estructura:
+#   active_profile   → perfil activo por defecto (prediction | training)
+#   profiles         → activacion de grupos por perfil
+#   feature_groups   → definicion de cada grupo (type, depends_on, features)
+#
+# Comportamiento cuando un grupo esta desactivado:
+#   - Las features de ese grupo se OMITEN del flat dict de salida.
+#   - El calculo de las metricas subyacentes tambien se salta cuando sea posible.
+#   - Para grupos con graceful_degradation: true, si la fuente de datos no esta
+#     disponible en runtime, el grupo se desactiva automaticamente sin error.
+# -----------------------------------------------------------------------
+
+active_profile: prediction
+
+profiles:
+  prediction:
+    description: "Prediccion en vivo — todas las features disponibles"
+    groups:
+      identity:            { enabled: true }
+      team_season_stats:   { enabled: true }
+      rankings:            { enabled: true }
+      expected_goals:      { enabled: true }
+      expected_fouls:      { enabled: true }
+      aggressiveness:      { enabled: true }
+      forma:               { enabled: true }
+      context:             { enabled: true }
+      referee_profile:     { enabled: true }
+      referee_interaction: { enabled: true }
+      market:              { enabled: true }
+      match_profile:       { enabled: true }
+
+  training:
+    description: "Generacion de training data para predictionModels"
+    groups:
+      identity:            { enabled: true }
+      team_season_stats:   { enabled: true }
+      rankings:            { enabled: true }
+      expected_goals:      { enabled: true }
+      expected_fouls:      { enabled: true }
+      aggressiveness:      { enabled: true }
+      forma:               { enabled: true }
+      context:             { enabled: true }
+      referee_profile:     { enabled: true }
+      referee_interaction: { enabled: true }
+      market:              { enabled: true }   # cuotas historicas B365 disponibles
+      match_profile:       { enabled: true }
+
+  minimal:
+    description: "Solo features base, sin mercado ni contexto competitivo"
+    groups:
+      identity:            { enabled: true }
+      team_season_stats:   { enabled: true }
+      rankings:            { enabled: true }
+      expected_goals:      { enabled: false }
+      expected_fouls:      { enabled: true }
+      aggressiveness:      { enabled: true }
+      forma:               { enabled: true }
+      context:             { enabled: false }
+      referee_profile:     { enabled: true }
+      referee_interaction: { enabled: true }
+      market:              { enabled: false }
+      match_profile:       { enabled: false }
+
+# -----------------------------------------------------------------------
+# Definicion de grupos de features
+# -----------------------------------------------------------------------
+
+feature_groups:
+
+  identity:
+    type: base
+    description: >
+      Identificadores del partido. No son features numericas para el modelo
+      pero son necesarios para indexar y trazabilidad.
+    depends_on: []
+    features:
+      - home_team
+      - away_team
+      - referee
+      - matchday
+      - season
+      - date
+
+  team_season_stats:
+    type: base
+    description: >
+      Estadisticas de temporada completa calculadas desde xStyle (decay temporal).
+      Son la fuente primaria de la mayoria de features derivadas.
+      ADVERTENCIA: desactivar este grupo hace inutilizables: rankings,
+      expected_goals, expected_fouls, aggressiveness, forma y match_profile.
+    depends_on: []
+    features:
+      - home_fouls_committed_avg
+      - home_fouls_suffered_avg
+      - away_fouls_committed_avg
+      - away_fouls_suffered_avg
+      - home_fouls_committed_curr
+      - away_fouls_committed_curr
+      - home_shots_curr
+      - away_shots_curr
+      - home_corners_curr
+      - away_corners_curr
+      - home_yellows_avg
+      - away_yellows_avg
+      - home_reds_avg
+      - away_reds_avg
+      - fouls_provoked_home
+      - fouls_provoked_away
+
+  rankings:
+    type: derived
+    description: "Rankings IAP normalizados (1-10) en general, local y visitante."
+    depends_on:
+      - team_season_stats
+    features:
+      - home_rank_hist
+      - away_rank_hist
+      - home_rank_curr
+      - away_rank_curr
+      - rank_diff_norm
+
+  expected_goals:
+    type: derived
+    description: >
+      xGoals (Poisson bivariate) y posesion esperada.
+      Requieren xStyle de ambos equipos (team_season_stats).
+    depends_on:
+      - team_season_stats
+    features:
+      - home_xg
+      - away_xg
+      - xg_diff
+      - home_possession
+      - away_possession
+
+  expected_fouls:
+    type: derived
+    description: >
+      xFouls esperadas y factores de ajuste ICC del contexto competitivo.
+      Requieren estadisticas de temporada y perfil del arbitro.
+    depends_on:
+      - team_season_stats
+      - referee_profile
+    features:
+      - xfouls_home
+      - xfouls_away
+      - xfouls_factor_home
+      - xfouls_factor_away
+
+  aggressiveness:
+    type: derived
+    description: >
+      Agresividad por volumen: faltas ponderadas por amarillas/rojas esperadas.
+      Depende de expected_fouls.
+    depends_on:
+      - expected_fouls
+    features:
+      - aggressiveness_volume_home
+      - aggressiveness_volume_away
+      - aggressiveness_norm_total
+
+  forma:
+    type: derived
+    description: >
+      Forma reciente (ultimos N partidos): faltas medias y momentum ofensivo.
+    depends_on:
+      - team_season_stats
+    features:
+      - forma_fouls_home
+      - forma_fouls_away
+      - momentum_home
+      - momentum_away
+
+  context:
+    type: derived
+    description: >
+      Contexto competitivo y de calendario: urgencia liga, fatiga, dias de descanso.
+      Requiere laliga_objectives (puede ser None si no hay datos: ICC = None).
+    depends_on:
+      - team_season_stats
+    features:
+      - season_phase
+      - is_derby
+      - urgency_home
+      - urgency_away
+      - fatigue_home
+      - fatigue_away
+      - days_rest_home
+      - days_rest_away
+
+  referee_profile:
+    type: derived
+    description: >
+      Perfil estadistico del arbitro via GMM bimodal (permisivo/estricto).
+      Requiere el nombre del arbitro (identity).
+    depends_on:
+      - identity
+    features:
+      - referee_mu_permisivo
+      - referee_mu_estricto
+      - referee_sigma_permisivo
+      - referee_sigma_estricto
+      - referee_peso_estricto
+      - referee_n_partidos
+
+  referee_interaction:
+    type: derived
+    description: >
+      Delta historico de faltas por equipo cuando arbitra este arbitro
+      (shrinkage bayesiano, min 2 muestras).
+    depends_on:
+      - identity
+      - referee_profile
+    features:
+      - ref_home_delta
+      - ref_away_delta
+      - ref_pair_delta_sum
+      - ref_pair_samples
+
+  market:
+    type: derived
+    description: >
+      Senales de mercado de apuestas (cuotas sin vigorish, entropia, OU).
+      Si no hay cuotas disponibles en runtime y graceful_degradation es true,
+      este grupo se omite automaticamente en lugar de fallar.
+    depends_on: []
+    graceful_degradation: true
+    features:
+      - has_market_odds
+      - market_home_win_prob
+      - market_draw_prob
+      - market_away_win_prob
+      - market_favorite_prob
+      - market_balance
+      - market_entropy
+      - market_ou25_over_prob
+      - market_ou25_under_prob
+      - foul_market_prob_over
+      - foul_market_implied_mean
+
+  match_profile:
+    type: derived
+    description: >
+      Perfil del partido: tipo (fisico/tecnico), ritmo, H2H y pace index.
+    depends_on:
+      - team_season_stats
+      - expected_fouls
+    features:
+      - intensidad_esperada
+      - riesgo_disciplinario
+      - pace_index_curr
+      - h2h_faltas_media
+      - h2h_partidos
