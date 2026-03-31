@@ -1,17 +1,152 @@
+# ============================================================
+# .gitignore — foultsPredictor
+# ============================================================
+
+# -----------------------------------------------------------
 # Python
+# -----------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
 .venv/
 venv/
-.env
-.pytest_cache/
-*.egg-info/
-dist/
-build/
+env/
+ENV/
 
-# OS / IDE
-.DS_Store
-Thumbs.db
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# -----------------------------------------------------------
+# Testing
+# -----------------------------------------------------------
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# -----------------------------------------------------------
+# IDE / Editors
+# -----------------------------------------------------------
+# VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# PyCharm / IntelliJ
 .idea/
-.vscode/
+
+# Sublime Text
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# -----------------------------------------------------------
+# OS generated
+# -----------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# -----------------------------------------------------------
+# Environment / Secrets
+# -----------------------------------------------------------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.yamlcredentials.json
+
+# -----------------------------------------------------------
+# Data Science / ML
+# -----------------------------------------------------------
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+
+# Datasets (large files)
+*.csv.gz
+*.parquet
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+
+# Model checkpoints
+checkpoints/
+*.pt
+*.pth
+*.bin
+*.onnx
+
+# TensorBoard
+runs/
+logs/
+tensorboard/
+
+# MLflow
+mlruns/
+mlartifacts/
+
+# -----------------------------------------------------------
+# Project-specific
+# -----------------------------------------------------------
+# Artefactos de predicción generados automáticamente
+features_j*.json
+jornada_*_predictions.json
+
+# Cache de datos descargados
+.cache/
+data/raw/
+data/processed/
+*.cache
+
+# Logs
+*.log
+logs/
+
+# -----------------------------------------------------------
+# AI Tools (local only)
+# -----------------------------------------------------------
+.atl/
+.claude/
+.aider*
+.cursor/
+.openai/

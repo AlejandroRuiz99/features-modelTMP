@@ -1,0 +1,8 @@
+{
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/features_generator",
+    "${workspaceFolder}/prediction_models"
+  ],
+  "python.analysis.typeCheckingMode": "basic",
+  "python.languageServer": "Pylance"
+}
