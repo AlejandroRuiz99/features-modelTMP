@@ -18,9 +18,7 @@ from core.config import ALPHA_CARD_PRESSURE, DECAY_LAMBDA
 from core.helpers import decay_weight, parse_date, safe
 from transformation.referees import calcular_perfiles
 
-AVG_FOULS_EQUIPO = 12.6
-AVG_AMARILLAS_EQUIPO = 2.3
-RATIO_AMARILLAS_FALTA_AVG = AVG_AMARILLAS_EQUIPO / AVG_FOULS_EQUIPO
+_RATIO_AMARILLAS_FALTA_FALLBACK = 2.3 / 12.6  # usado solo si no hay datos
 
 
 def calcular_xfouls(
@@ -40,7 +38,7 @@ def calcular_xfouls(
     lam = _decay_lambda_override if _decay_lambda_override is not None else DECAY_LAMBDA
     hoy = date.today()
     t: dict = {}
-    total_fouls = total_matches = 0
+    total_fouls = total_yellows = total_matches = 0
 
     for p in partidos:
         fecha = parse_date(p["date"])
@@ -73,10 +71,15 @@ def calcular_xfouls(
             t[nombre]["n"] += 1
 
         total_fouls += safe(p["home"].get("fouls")) + safe(p["away"].get("fouls"))
+        total_yellows += safe(p["home"].get("yellow_cards")) + safe(p["away"].get("yellow_cards"))
         total_matches += 1
 
     avg_total = total_fouls / total_matches if total_matches else 25.2
     avg_equipo = avg_total / 2
+    avg_yellows_equipo = (total_yellows / total_matches / 2) if total_matches else 2.3
+    ratio_amarillas_falta_avg = (
+        avg_yellows_equipo / avg_equipo if avg_equipo > 0 else _RATIO_AMARILLAS_FALTA_FALLBACK
+    )
 
     def fouls_rate(nombre: str) -> float:
         d = t.get(nombre, {})
@@ -99,8 +102,8 @@ def calcular_xfouls(
             return 1.0
         yr = d["y_sum"] / n
         fr = fouls_rate(nombre)
-        ratio = yr / fr if fr > 0 else RATIO_AMARILLAS_FALTA_AVG
-        exceso = max(0.0, ratio - RATIO_AMARILLAS_FALTA_AVG)
+        ratio = yr / fr if fr > 0 else ratio_amarillas_falta_avg
+        exceso = max(0.0, ratio - ratio_amarillas_falta_avg)
         return max(0.80, 1.0 - alpha_cp * exceso)
 
     ref_factor = 1.0

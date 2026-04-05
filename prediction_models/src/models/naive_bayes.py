@@ -3,7 +3,7 @@ Layer 1: Naive Bayes Foul Predictor.
 
 Replicates and extends the model from Pérez-Blanco & Salmerón (2025).
 Key features:
-  - Custom percentile-based discretization into 4 foul intervals
+  - Custom percentile-based discretization into 8 foul intervals (default)
   - Relative distance to cluster centroids for team ranking (5 clusters, 4 teams each)
   - Extension: referee node as additional parent in the BN
   - Output: interval probabilities + converted full PMF
@@ -60,11 +60,14 @@ class ClusterAssignment:
 class FoulDiscretizer:
     """
     Discretizes the total fouls into intervals based on historical percentiles.
-    Default: P25, P50, P75 -> 4 intervals.
+    Default: [12,25,38,50,62,75,88] -> 8 intervals.
+    Custom percentiles are supported for backward compatibility.
     """
 
     def __init__(self, percentiles: list[int] | None = None):
-        self.percentiles = percentiles or [25, 50, 75]
+        self.percentiles = (
+            percentiles if percentiles is not None else [12, 25, 38, 50, 62, 75, 88]
+        )
         self.breakpoints: list[int] = []
 
     def fit(self, historical_fouls: np.ndarray):
@@ -164,12 +167,16 @@ class NaiveBayesFoulPredictor:
         self.xfouls_clusterer = TeamClusterer(n_foul_clusters)
         self.agg_clusterer = TeamClusterer(n_foul_clusters)
         self.ref_delta_clusterer = TeamClusterer(n_foul_clusters)
+        self.referee_avg_clusterer = TeamClusterer(n_foul_clusters)
 
-        self._n_foul_classes: int = 4
+        self._n_foul_classes: int = 8  # updated in fit() via foul_discretizer.n_classes
         self._class_priors: np.ndarray = np.array([])
         # cond_probs[feature_name] = array of shape (n_clusters, n_foul_classes)
         self._cond_probs: dict[str, np.ndarray] = {}
         self._referee_cond_probs: np.ndarray = np.array([])  # shape (2, n_foul_classes)
+        self._ref_avg_cond_probs: np.ndarray = np.array(
+            []
+        )  # shape (n_clusters, n_foul_classes)
 
     def fit(
         self,
@@ -197,9 +204,12 @@ class NaiveBayesFoulPredictor:
             home, away = m.get("home_team", ""), m.get("away_team", "")
             xfouls_avg.setdefault(home, []).append(float(m.get("xfouls_home", 12.5)))
             xfouls_avg.setdefault(away, []).append(float(m.get("xfouls_away", 12.5)))
-            agg_val = float(m.get("aggressiveness_norm_total", 0.5))
-            agg_avg.setdefault(home, []).append(agg_val)
-            agg_avg.setdefault(away, []).append(agg_val)
+            agg_avg.setdefault(home, []).append(
+                float(m.get("aggressiveness_volume_home", 0.5))
+            )
+            agg_avg.setdefault(away, []).append(
+                float(m.get("aggressiveness_volume_away", 0.5))
+            )
             ref_delta_avg.setdefault(home, []).append(
                 float(m.get("ref_home_delta", 0.0))
             )
@@ -246,6 +256,45 @@ class NaiveBayesFoulPredictor:
             ref_counts[mode] /= ref_counts[mode].sum()
         self._referee_cond_probs = ref_counts
 
+        # Referee average fouls — derived from GMM params already in each match dict.
+        # Captures the referee's overall foul tendency as a clustered NB feature.
+        # ref_avg is clamped to [16, 35] to avoid degenerate GMM fits (n=1 referees
+        # can produce mu_s=40+ with sigma=0, which corrupt the clustering).
+        _REF_AVG_MIN, _REF_AVG_MAX = 16.0, 35.0
+        ref_avg_by_name: dict[str, list[float]] = {}
+        for m in matches:
+            ref_name = m.get("referee") or "unknown"
+            mu_p = float(m.get("referee_mu_permisivo", 22.0))
+            mu_s = float(m.get("referee_mu_estricto", 30.0))
+            w_s = float(m.get("referee_peso_estricto", 0.5))
+            ref_avg = max(
+                _REF_AVG_MIN, min(_REF_AVG_MAX, mu_p * (1.0 - w_s) + mu_s * w_s)
+            )
+            ref_avg_by_name.setdefault(ref_name, []).append(ref_avg)
+        self.referee_avg_clusterer.fit(
+            {ref: float(np.mean(vals)) for ref, vals in ref_avg_by_name.items()}
+        )
+        n_ref_clusters = self.referee_avg_clusterer.n_clusters
+        ref_avg_counts = np.ones((n_ref_clusters, self._n_foul_classes)) * 1e-6
+        for m in matches:
+            cls = self.foul_discretizer.discretize(m["fouls_total"])
+            mu_p = float(m.get("referee_mu_permisivo", 22.0))
+            mu_s = float(m.get("referee_mu_estricto", 30.0))
+            w_s = float(m.get("referee_peso_estricto", 0.5))
+            ref_avg = max(
+                _REF_AVG_MIN, min(_REF_AVG_MAX, mu_p * (1.0 - w_s) + mu_s * w_s)
+            )
+            assignment = self.referee_avg_clusterer.assign(ref_avg)
+            idx = assignment.cluster_idx
+            ref_avg_counts[idx, cls] += assignment.w_lower
+            if idx + 1 < n_ref_clusters:
+                ref_avg_counts[idx + 1, cls] += assignment.w_upper
+        for c in range(n_ref_clusters):
+            row_sum = ref_avg_counts[c].sum()
+            if row_sum > 0:
+                ref_avg_counts[c] /= row_sum
+        self._ref_avg_cond_probs = ref_avg_counts
+
     def _get_feature_specs(self):
         """Returns (feat_name, clusterer, home_key, away_key) tuples."""
         return [
@@ -267,11 +316,51 @@ class NaiveBayesFoulPredictor:
             (
                 "aggressiveness",
                 self.agg_clusterer,
-                "aggressiveness_norm_total",
-                "aggressiveness_norm_total",
+                "aggressiveness_volume_home",
+                "aggressiveness_volume_away",
             ),
             ("ref_delta", self.ref_delta_clusterer, "ref_home_delta", "ref_away_delta"),
         ]
+
+    def _referee_log_prior_shift(self, match: dict) -> np.ndarray:
+        """Bayesian prior shift based on the referee's historical GMM profile.
+
+        Pulls class priors toward the distribution implied by this referee's
+        bimodal fouls pattern. Only activates for referees with >= 20 matches
+        (degenerate GMMs from few samples cause extreme sigma values).
+        Alpha is capped at 0.10 to avoid dominating the standard NB likelihood.
+
+        Returns zeros for insufficient data or empty discretizer.
+        """
+        ref_n = int(match.get("referee_n_partidos", 0))
+        if ref_n < 20 or not self.foul_discretizer.breakpoints:
+            return np.zeros(self._n_foul_classes)
+
+        mu_p = float(match.get("referee_mu_permisivo", 22.0))
+        mu_s = float(match.get("referee_mu_estricto", 30.0))
+        # Floor at 3.0: GMMs fitted on few samples collapse to sigma~0,
+        # creating a spike at an extreme mu that corrupts the prior.
+        sig_p = max(float(match.get("referee_sigma_permisivo", 4.0)), 3.0)
+        sig_s = max(float(match.get("referee_sigma_estricto", 4.0)), 3.0)
+        w_s = float(match.get("referee_peso_estricto", 0.5))
+
+        bp = self.foul_discretizer.breakpoints
+        midpoints = np.array([(bp[i] + bp[i + 1]) / 2.0 for i in range(len(bp) - 1)])
+
+        def _gauss(x: np.ndarray, mu: float, sigma: float) -> np.ndarray:
+            return np.exp(-0.5 * ((x - mu) / sigma) ** 2) / (
+                sigma * np.sqrt(2.0 * np.pi)
+            )
+
+        ref_pdf = (1.0 - w_s) * _gauss(midpoints, mu_p, sig_p) + w_s * _gauss(
+            midpoints, mu_s, sig_s
+        )
+        ref_pdf = ref_pdf + 1e-10
+        ref_prior = ref_pdf / ref_pdf.sum()
+
+        alpha = min(0.10, (ref_n - 20) / 150.0)
+        mixed_prior = (1.0 - alpha) * self._class_priors + alpha * ref_prior
+        return np.log(mixed_prior + 1e-15) - np.log(self._class_priors + 1e-15)
 
     def predict_interval_probs(self, match: dict) -> np.ndarray:
         """
@@ -301,22 +390,62 @@ class NaiveBayesFoulPredictor:
 
                 log_posteriors += np.log(likelihood + 1e-15)
 
-        # Referee contribution
+        # Referee mode contribution
         referee_mode_prob = match.get("referee_strict_prob", 0.5)
         ref_likelihood = (1 - referee_mode_prob) * self._referee_cond_probs[
             0
         ] + referee_mode_prob * self._referee_cond_probs[1]
         log_posteriors += np.log(ref_likelihood + 1e-15)
 
+        # Referee average fouls — single match-level feature (GMM-derived)
+        if self._ref_avg_cond_probs.size > 0:
+            mu_p = float(match.get("referee_mu_permisivo", 22.0))
+            mu_s = float(match.get("referee_mu_estricto", 30.0))
+            w_s = float(match.get("referee_peso_estricto", 0.5))
+            ref_avg = max(16.0, min(35.0, mu_p * (1.0 - w_s) + mu_s * w_s))
+            assignment = self.referee_avg_clusterer.assign(ref_avg)
+            idx = assignment.cluster_idx
+            likelihood = np.zeros(self._n_foul_classes)
+            likelihood += assignment.w_lower * self._ref_avg_cond_probs[idx]
+            if idx + 1 < self._ref_avg_cond_probs.shape[0]:
+                likelihood += assignment.w_upper * self._ref_avg_cond_probs[idx + 1]
+            log_posteriors += np.log(likelihood + 1e-15)
+
+        # Bayesian prior shift using referee GMM profile
+        log_posteriors += self._referee_log_prior_shift(match)
+
         posteriors = np.exp(log_posteriors - log_posteriors.max())
         posteriors /= posteriors.sum()
 
         return posteriors
 
-    def predict_pmf(self, match: dict) -> FoulPMF:
-        """Convert interval probabilities to a full PMF."""
+    def predict_pmf(self, match: dict, min_interval_prob: float = 0.02) -> FoulPMF:
+        """Convert interval probabilities to a full PMF using triangular blending.
+
+        Applies a Laplace-like probability floor (*min_interval_prob*) to each
+        interval before smoothing.  Naive Bayes is known to produce
+        overconfident posteriors (it ignores feature correlations), so this
+        small floor prevents any single interval from receiving near-zero
+        probability mass, which would cause catastrophically high NLL for
+        matches whose true foul count falls in a tail interval.
+
+        Args:
+            match: Enriched feature dict for the match.
+            min_interval_prob: Minimum probability mass per interval before
+                normalisation (default 0.02).  Setting to 0 disables the
+                floor and gives the original raw-posterior behaviour.
+
+        Returns:
+            A :class:`~src.utils.distributions.FoulPMF` whose probabilities
+            sum to 1.0 ± 1e-6.
+        """
         interval_probs = self.predict_interval_probs(match)
-        return pmf_from_intervals(interval_probs, self.foul_discretizer.breakpoints)
+        if min_interval_prob > 0.0:
+            interval_probs = interval_probs + min_interval_prob
+            interval_probs /= interval_probs.sum()
+        return pmf_from_intervals(
+            interval_probs, self.foul_discretizer.breakpoints, smooth=True
+        )
 
     def predict(self, match: dict) -> dict:
         """Full prediction output."""

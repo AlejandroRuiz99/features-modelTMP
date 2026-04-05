@@ -141,8 +141,10 @@ def _load_from_supabase() -> dict:
 
 def get_state(*, refresh: bool = False) -> dict:
     """Devuelve el estado cacheado. Carga de Supabase la primera vez o si refresh=True."""
+    import copy
+
     global _cached
     with _lock:
         if _cached is None or refresh:
             _cached = _load_from_supabase()
-        return dict(_cached)
+        return copy.deepcopy(_cached)

@@ -29,12 +29,18 @@ def get_match_odds_rows(
     def resolve(n: str | None) -> str:
         return buscar_equipo(n or "", scores) or (n or "")
 
-    match_rows = [
-        r
-        for r in rows
-        if team_match(resolve(r.get("home_team")), equipo_local)
-        and team_match(resolve(r.get("away_team")), equipo_visitante)
-    ]
+    def _filter(local: str, visitante: str) -> list[dict[str, Any]]:
+        return [
+            r
+            for r in rows
+            if team_match(resolve(r.get("home_team")), local)
+            and team_match(resolve(r.get("away_team")), visitante)
+        ]
+
+    match_rows = _filter(equipo_local, equipo_visitante)
+    if not match_rows:
+        # El bookmaker a veces invierte local/visitante — intentar al revés
+        match_rows = _filter(equipo_visitante, equipo_local)
     if not match_rows:
         return [], scraped_at, None
 

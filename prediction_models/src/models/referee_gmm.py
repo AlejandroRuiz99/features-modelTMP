@@ -246,6 +246,27 @@ class RefereeProfiler:
         Entrena el ModeSelector usando datos historicos.
         Target: P(estricto) derivado de si las faltas reales fueron mas cercanas
         al modo estricto o al permisivo del perfil del arbitro.
+
+        T16 ablation (2026-04-02): ModeSelector vs. static threshold
+        ────────────────────────────────────────────────────────────
+        After full retrain with 3-way split (train=2023-24, tune=2024-25,
+        test=2025-26), the ModeSelector was evaluated against a static
+        threshold (predict_mode returns referee_peso_estricto directly).
+
+        Results on tune set (2024-25, n=377):
+          NLL WITH ModeSelector  : 3.1500
+          NLL WITHOUT ModeSelector: 3.1895
+          NLL improvement        : 0.0395  ≥ 0.02 threshold
+
+        Results on test set (2025-26, n=277):
+          NLL WITH ModeSelector  : 3.1494
+          NLL WITHOUT ModeSelector: 3.2111
+          NLL improvement        : 0.0617  ≥ 0.02 threshold
+
+        DECISION: **KEEP ModeSelector**.  The 100-epoch in-sample GMM-distance
+        MLP provides a meaningful improvement above the 0.02 NLL threshold on
+        both tune and test sets.  Simplifying to a static threshold would cost
+        ~0.04–0.06 NLL.
         """
         targets = []
         for name, fouls in zip(referee_names, actual_fouls):

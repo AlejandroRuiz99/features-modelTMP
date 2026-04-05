@@ -30,23 +30,6 @@ from typing import Any
 
 from core.state_cache import get_state
 from assembly import build_features
-from selection.referee_resolver import resolve_referee_from_external_api
-
-
-def _resolve_arbitro(
-    equipo_local: str,
-    equipo_visitante: str,
-    arbitro: str | None,
-    fecha_partido: str | None,
-) -> tuple[str | None, str]:
-    if arbitro is not None:
-        return arbitro, "manual"
-    resolved = resolve_referee_from_external_api(
-        equipo_local,
-        equipo_visitante,
-        fecha_partido,
-    )
-    return resolved, ("api_rfef" if resolved else "not_available")
 
 
 def _build_kwargs(
@@ -61,14 +44,13 @@ def _build_kwargs(
     features_profile: str | None,
     features_config: str | dict | None,
 ) -> dict[str, Any]:
-    arb, src = _resolve_arbitro(equipo_local, equipo_visitante, arbitro, fecha_partido)
     return dict(
         state=state,
         equipo_local_input=equipo_local,
         equipo_visitante_input=equipo_visitante,
         jornada=jornada,
-        arbitro_input=arb,
-        arbitraje_source=src,
+        arbitro_input=arbitro,
+        arbitraje_source=("manual" if arbitro else "not_available"),
         cuotas_prepartido=cuotas_prepartido,
         fecha_partido_input=fecha_partido,
         features_profile=features_profile,

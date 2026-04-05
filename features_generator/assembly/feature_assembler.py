@@ -33,24 +33,7 @@ from assembly.betting_odds import build_market_category
 from assembly.completeness import build_quality_category
 from assembly.feature_registry import FeatureRegistry
 from core.utils import no_vig, no_vig_3, market_entropy
-
-
-# ---------------------------------------------------------------------------
-# Constantes
-# ---------------------------------------------------------------------------
-
-_DERBIES: set[frozenset] = {
-    frozenset({"Barcelona", "Real Madrid"}),
-    frozenset({"Real Madrid", "Ath Madrid"}),
-    frozenset({"Real Madrid", "Vallecano"}),
-    frozenset({"Ath Madrid", "Getafe"}),
-    frozenset({"Barcelona", "Espanol"}),
-    frozenset({"Ath Bilbao", "Sociedad"}),
-    frozenset({"Sevilla", "Betis"}),
-    frozenset({"Valencia", "Villarreal"}),
-    frozenset({"Valencia", "Levante"}),
-    frozenset({"Celta", "Deportivo"}),
-}
+from core.config import DERBIES as _DERBIES
 
 _AGG_SCALE_TEAM = 15.0
 _AGG_SCALE_TOTAL = 30.0
@@ -185,7 +168,13 @@ def _compute_expected_stats(
     ctx_comp = _ctx_payload_to_comp(ctx_payload)
     kp_final = ensamblar_knowledge_pack(**kp_kwargs, contexto_comp=ctx_comp)  # type: ignore[arg-type]
 
-    return kp_final, ctx_payload, xf
+    # ctx_payload definitivo usa contexto_temporada del KP final (post-ICC)
+    ctx_payload_final, _ = build_context_payload(
+        **ctx_kwargs,  # type: ignore[arg-type]
+        contexto_temporada=kp_final.get("contexto_temporada", {}),
+    )
+
+    return kp_final, ctx_payload_final, xf
 
 
 # ---------------------------------------------------------------------------
@@ -359,8 +348,8 @@ def _build_team_block(
             "momentum": round(float(forma_ctx.get("momentum_score", 0.5)), 3),
         },
         "contexto": {
-            "urgencia": round(float(compet.get("urgency_score", 0.5)), 3),
-            "fatiga": round(float(compet.get("fatigue_score", 0.2)), 3),
+            "urgencia": round(float(compet.get("urgency_score") or 0.5), 3),
+            "fatiga": round(float(compet.get("fatigue_score") or 0.2), 3),
             "dias_descanso": calendario.get("days_since_last") or 7,
             "factor_xfaltas": round(float(factors.get("xfouls_factor", 1.0)), 4),
         },
@@ -375,6 +364,7 @@ def _build_team_block(
 def _assemble_contract(
     state: dict,
     kp: dict,
+    ctx_payload: dict,
     eq_local: str,
     eq_visit: str,
     arbitro: str | None,
@@ -390,22 +380,18 @@ def _assemble_contract(
     partidos = state["partidos"]
     xstyles = state["xstyles"]
 
-    # Context payload definitivo
-    ctx_payload, _ = build_context_payload(
-        state=state,
-        eq_local=eq_local,
-        eq_visit=eq_visit,
-        jornada=jornada,
-        contexto_temporada=kp.get("contexto_temporada", {}),
-        arbitro=arbitro,
-        arbitraje_source=arbitraje_source,
-        match_date=fecha_partido,
-    )
-
     # GMM del arbitro
     perfiles_gmm = state.get("perfiles_gmm") or calcular_perfiles_gmm(partidos)
     arb_estadisticas = get_perfil_gmm_o_default(arbitro, perfiles_gmm)
     arb_interaccion = ctx_payload.get("arbitraje", {}).get("interaccion_equipos", {})
+
+    # Promedios contextuales del árbitro (clean/heavy) desde ref_perfiles
+    refs = state.get("ref_perfiles") or calcular_perfiles_arbitros(partidos)
+    ref_data = refs.get(arbitro, {}) if arbitro else {}
+    if ref_data.get("fouls_clean_avg") is not None:
+        arb_estadisticas["fouls_clean_avg"] = ref_data["fouls_clean_avg"]
+    if ref_data.get("fouls_heavy_avg") is not None:
+        arb_estadisticas["fouls_heavy_avg"] = ref_data["fouls_heavy_avg"]
 
     # Metricas del knowledge pack
     em = kp.get("expected_metrics", {})
@@ -455,6 +441,7 @@ def _assemble_contract(
         "arbitro": {
             "nombre": arbitro or "unknown",
             "estadisticas": arb_estadisticas,
+            "home_bias": arb_interaccion.get("home_bias", 0.5),
             "interaccion_local": {
                 "delta_faltas": arb_interaccion.get("delta_local", 0.0),
                 "partidos": arb_interaccion.get("n_partidos_local", 0),
@@ -604,10 +591,8 @@ def _flatten(raw: dict) -> dict:
         "home_fouls_suffered_avg": float(local_temp.get("faltas_provocadas", 12.0)),
         "away_fouls_committed_avg": float(visitante_temp.get("faltas_cometidas", 12.0)),
         "away_fouls_suffered_avg": float(visitante_temp.get("faltas_provocadas", 12.0)),
-        "home_fouls_committed_curr": float(local_temp.get("faltas_cometidas", 12.0)),
-        "away_fouls_committed_curr": float(
-            visitante_temp.get("faltas_cometidas", 12.0)
-        ),
+        "home_fouls_committed_curr": float(local_forma.get("faltas_media", 12.0)),
+        "away_fouls_committed_curr": float(visitante_forma.get("faltas_media", 12.0)),
         "home_shots_curr": float(local_temp.get("tiros", pace_index_val * 0.4)),
         "away_shots_curr": float(visitante_temp.get("tiros", pace_index_val * 0.4)),
         "home_corners_curr": float(local_temp.get("corners", pace_index_val * 0.15)),
@@ -677,6 +662,30 @@ def _flatten(raw: dict) -> dict:
         "market_ou25_under_prob": float(goles_ou.get("prob_under", 0.50)),
         "foul_market_prob_over": float(faltas_ou.get("prob_over", 0.50)),
         "foul_market_implied_mean": float(faltas_ou.get("linea", 24.5)),
+        # Promedio contextual del árbitro con equipos limpios (< 11.5 faltas/partido)
+        # Usado como floor en ensemble._enrich_match() — no es feature del modelo.
+        "referee_clean_avg": float(
+            arb_stats.get(
+                "fouls_clean_avg",
+                arb_stats.get("mu_permisivo", 22.0) * (1.0 - float(arb_stats.get("peso_estricto", 0.5)))
+                + arb_stats.get("mu_estricto", 30.0) * float(arb_stats.get("peso_estricto", 0.5)),
+            )
+        ),
+        # Árbitro × equipo — nuevas features
+        "referee_avg_fouls": round(
+            float(arb_stats.get("mu_permisivo", 22.0)) * (1.0 - float(arb_stats.get("peso_estricto", 0.5)))
+            + float(arb_stats.get("mu_estricto", 30.0)) * float(arb_stats.get("peso_estricto", 0.5)),
+            2,
+        ),
+        "referee_home_bias": float(arbitro.get("home_bias", 0.5)),
+        "referee_team_committed_home": round(
+            float(local_temp.get("faltas_cometidas", 12.0)) + float(arb_int_local.get("delta_faltas", 0.0)),
+            2,
+        ),
+        "referee_team_committed_away": round(
+            float(visitante_temp.get("faltas_cometidas", 12.0)) + float(arb_int_visitante.get("delta_faltas", 0.0)),
+            2,
+        ),
         "intensidad_esperada": str(
             contexto_partido.get("intensidad_esperada", "media")
         ),
@@ -723,7 +732,7 @@ def _run_pipeline(
         arbitro_input,
         jornada,
     )
-    kp, _, xf = _compute_expected_stats(
+    kp, ctx_payload, xf = _compute_expected_stats(
         state,
         eq_local,
         eq_visit,
@@ -744,6 +753,7 @@ def _run_pipeline(
     return _assemble_contract(
         state,
         kp,
+        ctx_payload,
         eq_local,
         eq_visit,
         arbitro,

@@ -53,7 +53,8 @@ class GatingNetwork(nn.Module):
         hidden_dims: list[int] | None = None,
         dropout: float = 0.15,
         temperature: float = 1.0,
-        min_weight: float = 0.15,
+        min_weight: float = 0.10,
+        max_weight_bayes: float = 1.0,
     ):
         super().__init__()
         if hidden_dims is None:
@@ -61,6 +62,7 @@ class GatingNetwork(nn.Module):
 
         self.temperature = temperature
         self.min_weight = float(min_weight)
+        self.max_weight_bayes = float(max_weight_bayes)
 
         layers = []
         in_dim = self.N_GATE_FEATURES
@@ -83,6 +85,17 @@ class GatingNetwork(nn.Module):
         # Piso minimo: evita que una capa reciba 0% cuando el entrenamiento es pequenio
         min_w = float(np.clip(self.min_weight, 0.0, 1.0 / self.N_LAYERS - 1e-6))
         floored = raw * (1.0 - self.N_LAYERS * min_w) + min_w
+        # Techo para NB (índice 0): cap dinámico para evitar que un NB sesgado
+        # domine la combinación. El exceso se redistribuye a NegBin y ANFIS.
+        if self.max_weight_bayes < 1.0:
+            excess = torch.clamp(floored[:, 0:1] - self.max_weight_bayes, min=0.0)
+            floored = torch.cat(
+                [
+                    floored[:, 0:1] - excess,
+                    floored[:, 1:] + excess / (self.N_LAYERS - 1),
+                ],
+                dim=1,
+            )
         return floored
 
 
@@ -100,15 +113,22 @@ class DynamicEnsembleWeighter:
         lr: float = 0.001,
         epochs: int = 150,
         batch_size: int = 32,
-        min_weight: float = 0.15,
+        min_weight: float = 0.10,
         prior_mix: float = 0.35,
+        max_weight_bayes: float = 0.18,
+        entropy_coeff: float = 0.08,
     ):
         self.gating = GatingNetwork(
-            hidden_dims, dropout, temperature, min_weight=min_weight
+            hidden_dims,
+            dropout,
+            temperature,
+            min_weight=min_weight,
+            max_weight_bayes=max_weight_bayes,
         )
         self.lr = lr
         self.epochs = epochs
         self.batch_size = batch_size
+        self._entropy_coeff = float(entropy_coeff)
         # Prior global aprendido en validacion OOS (mezclado con pesos dinamicos)
         self._global_prior = np.array([1 / 3, 1 / 3, 1 / 3], dtype=np.float64)
         self._prior_mix = float(prior_mix)
@@ -314,25 +334,22 @@ class DynamicEnsembleWeighter:
 
                 # Entropy regularization: evita que el gating colapse a un solo layer
                 gate_entropy = -(weights * torch.log(weights + 1e-10)).sum(dim=1).mean()
-                loss = 0.35 * nll + 0.40 * mae_mean + 0.25 * crps - 0.12 * gate_entropy
+                loss = 0.55 * nll + 0.25 * mae_mean + 0.15 * crps - self._entropy_coeff * gate_entropy  # positive terms sum to 0.95 by design (entropy subtracted separately)
 
                 optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.gating.parameters(), max_norm=1.0)
                 optimizer.step()
 
-        # Prior global por desempeño individual OOS (menor error => mayor peso)
-        maes = []
+        # Prior global por desempeño individual OOS (menor NLL => mayor peso)
         nlls = []
         for comp in range(3):
             pmf_comp = P[:, comp, :]
-            exp_comp = (pmf_comp * k).sum(dim=1)
-            maes.append(torch.mean(torch.abs(exp_comp - y.float())).item())
             p_at_y = pmf_comp[torch.arange(len(y)), y]
             nlls.append(torch.mean(-torch.log(p_at_y + 1e-10)).item())
 
         inv_score = np.array(
-            [1.0 / (maes[i] + 0.7 * nlls[i] + 1e-8) for i in range(3)],
+            [1.0 / (nlls[i] + 1e-8) for i in range(3)],
             dtype=np.float64,
         )
         self._global_prior = inv_score / inv_score.sum()

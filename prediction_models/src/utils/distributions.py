@@ -127,33 +127,102 @@ def pmf_from_negbin(mu: float, alpha: float) -> FoulPMF:
     return FoulPMF(probs=probs)
 
 
-def pmf_from_intervals(interval_probs: np.ndarray, breakpoints: list[int]) -> FoulPMF:
+def pmf_from_intervals(
+    interval_probs: np.ndarray,
+    breakpoints: list[int],
+    smooth: bool = False,
+) -> FoulPMF:
     """
     Convert interval probabilities to a full PMF.
 
-    Interior intervals use uniform distribution.
-    The final (open-ended) interval uses a right-triangular decay so that
-    probability concentrates near the lower bound instead of being spread
-    uniformly across rare extreme values.
+    Args:
+        interval_probs: Probability mass assigned to each interval.
+        breakpoints: Left endpoints of each interval. The final interval extends
+            from the last breakpoint to ``MAX_K``.
+        smooth: When ``False`` (default), interior intervals use uniform
+            distribution and the last uses right-triangular decay — identical
+            to the original behaviour. When ``True``, each interval's mass is
+            distributed with a triangular (tent) kernel centred at the interval
+            midpoint, spanning ±half-width into adjacent intervals. This
+            eliminates hard step-function discontinuities at boundaries. The
+            resulting PMF is normalised to sum to 1.0.
+
+    Returns:
+        A :class:`FoulPMF` whose probabilities sum to 1.0 ± 1e-6.
     """
-    probs = np.zeros(MAX_K)
+    if not smooth:
+        # ------------------------------------------------------------------ #
+        # Original piecewise-uniform implementation (backward compat)
+        # ------------------------------------------------------------------ #
+        probs = np.zeros(MAX_K)
+        n_intervals = len(interval_probs)
+
+        for i, p_interval in enumerate(interval_probs):
+            low = breakpoints[i]
+            high = breakpoints[i + 1] if i + 1 < len(breakpoints) else MAX_K
+            n_vals = high - low
+            if n_vals <= 0:
+                continue
+
+            is_last = i == n_intervals - 1
+            if is_last and n_vals > 1:
+                # Right-triangular decay: weight linearly decreasing from low to high
+                weights = np.arange(n_vals, 0, -1, dtype=np.float64)
+                weights /= weights.sum()
+                probs[low:high] = p_interval * weights
+            else:
+                probs[low:high] = p_interval / n_vals
+
+        return FoulPMF(probs=probs)
+
+    # ---------------------------------------------------------------------- #
+    # Triangular blending implementation (smooth=True)
+    # ---------------------------------------------------------------------- #
+    # Build the right-edge of each interval (exclusive).
     n_intervals = len(interval_probs)
+    rights: list[int] = []
+    for i in range(n_intervals):
+        rights.append(breakpoints[i + 1] if i + 1 < len(breakpoints) else MAX_K)
+
+    # Compute interval half-widths for the tent-function bases.
+    #   half_width[i] = (rights[i] - breakpoints[i]) / 2.0
+    half_widths: list[float] = [
+        (rights[i] - breakpoints[i]) / 2.0 for i in range(n_intervals)
+    ]
+
+    k_vals = np.arange(MAX_K, dtype=np.float64)
+    probs = np.zeros(MAX_K)
 
     for i, p_interval in enumerate(interval_probs):
         low = breakpoints[i]
-        high = breakpoints[i + 1] if i + 1 < len(breakpoints) else MAX_K
-        n_vals = high - low
-        if n_vals <= 0:
+        high = rights[i]
+        mid = (low + high) / 2.0
+        hw = half_widths[i]
+
+        if hw <= 0.0:
+            # Degenerate (zero-width) interval: concentrate at breakpoint.
+            idx = int(low)
+            if 0 <= idx < MAX_K:
+                probs[idx] += p_interval
             continue
 
-        is_last = i == n_intervals - 1
-        if is_last and n_vals > 1:
-            # Right-triangular decay: weight linearly decreasing from low to high
-            weights = np.arange(n_vals, 0, -1, dtype=np.float64)
-            weights /= weights.sum()
-            probs[low:high] = p_interval * weights
-        else:
-            probs[low:high] = p_interval / n_vals
+        # Tent kernel centred at interval midpoint, with base = 2 × interval width.
+        # The kernel spans ±hw BEYOND each interval edge into neighbouring intervals,
+        # which smooths the hard steps at breakpoints.
+        #   kernel(k) = max(0, 1 - |k - mid| / (2 * hw))
+        # where 2*hw = interval_width.  Peak at mid, zero at mid ± 2*hw.
+        tent = np.maximum(0.0, 1.0 - np.abs(k_vals - mid) / (2.0 * hw))
+
+        tent_sum = tent.sum()
+        if tent_sum > 0.0:
+            tent /= tent_sum  # normalise to unit mass
+
+        probs += p_interval * tent
+
+    # Final normalisation guard (should be a no-op if inputs sum to 1).
+    total = probs.sum()
+    if total > 0.0:
+        probs /= total
 
     return FoulPMF(probs=probs)
 

@@ -62,3 +62,17 @@ agresividad_volumen:
   peso_faltas: 1.0
   peso_amarillas: 0.10
   peso_rojas: 0.00
+
+# Derbies de La Liga — pares de equipos que siempre generan partido de alta intensidad.
+# Usar nombres canónicos cortos (mismos que en TEAM_ALIASES de core/utils.py).
+derbies:
+  - ["Barcelona", "Real Madrid"]
+  - ["Real Madrid", "Ath Madrid"]
+  - ["Real Madrid", "Vallecano"]
+  - ["Ath Madrid", "Getafe"]
+  - ["Barcelona", "Espanol"]
+  - ["Ath Bilbao", "Sociedad"]
+  - ["Sevilla", "Betis"]
+  - ["Valencia", "Villarreal"]
+  - ["Valencia", "Levante"]
+  - ["Celta", "Deportivo"]

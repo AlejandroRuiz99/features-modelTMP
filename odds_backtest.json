@@ -1,0 +1,23 @@
+[
+  {
+    "local": "Girona",
+    "visitante": "Ath Bilbao",
+    "fecha": "2026-03-14",
+    "jornada": 28,
+    "arbitro": "Galech Apezteguia"
+  },
+  {
+    "local": "Betis",
+    "visitante": "Celta",
+    "fecha": "2026-03-15",
+    "jornada": 28,
+    "arbitro": "Ortiz Arias"
+  },
+  {
+    "local": "Sevilla",
+    "visitante": "Valencia",
+    "fecha": "2026-03-21",
+    "jornada": 29,
+    "arbitro": "Garcia Verdura"
+  }
+]

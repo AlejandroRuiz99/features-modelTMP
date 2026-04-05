@@ -211,6 +211,7 @@ feature_groups:
       - referee_sigma_estricto
       - referee_peso_estricto
       - referee_n_partidos
+      - referee_clean_avg
 
   referee_interaction:
     type: derived

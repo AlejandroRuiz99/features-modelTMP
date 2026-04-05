@@ -13,10 +13,6 @@ _BASE_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(_BASE_DIR / ".env")
 
-# --- Secretos (.env) ---------------------------------------------------------
-SUPABASE_URL: str = os.environ["SUPABASE_URL"]
-SUPABASE_KEY: str = os.environ["SUPABASE_KEY"]
-
 # --- Parámetros del modelo (config.yaml) --------------------------------------
 with open(_BASE_DIR / "config.yaml", encoding="utf-8") as _f:
     _cfg = yaml.safe_load(_f)
@@ -48,3 +44,7 @@ _agg_vol = _cfg.get("agresividad_volumen", {})
 AGG_VOL_PESO_FALTAS: float = _agg_vol.get("peso_faltas", 1.0)
 AGG_VOL_PESO_AMARILLAS: float = _agg_vol.get("peso_amarillas", 0.10)
 AGG_VOL_PESO_ROJAS: float = _agg_vol.get("peso_rojas", 0.00)
+
+DERBIES: set[frozenset] = {
+    frozenset(pair) for pair in _cfg.get("derbies", [])
+}

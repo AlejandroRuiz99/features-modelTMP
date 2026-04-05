@@ -3,16 +3,35 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
-from core.config import SUPABASE_URL, SUPABASE_KEY
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+_BASE_DIR = Path(__file__).resolve().parent.parent
+
+_client: Client | None = None
 
 
 def get_client() -> Client:
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    """Devuelve el cliente Supabase, cargando credenciales la primera vez."""
+    global _client
+    if _client is None:
+        load_dotenv(_BASE_DIR / ".env")
+        url = os.environ.get("SUPABASE_URL", "")
+        key = os.environ.get("SUPABASE_KEY", "")
+        if not url or not key:
+            raise RuntimeError(
+                "SUPABASE_URL y SUPABASE_KEY son requeridos. "
+                "Asegurate de tener un archivo .env en features_generator/."
+            )
+        _client = create_client(url, key)
+    return _client
 
 
 def _row_to_partido(row: dict) -> dict:

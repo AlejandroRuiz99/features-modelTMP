@@ -448,6 +448,48 @@ def _calc_ref_team_delta(
     return round(delta * n / (n + shrinkage_k), 3), n
 
 
+def _calc_referee_home_bias(
+    *,
+    partidos: list[dict],
+    referee_name: str | None,
+    min_samples: int = 3,
+    shrinkage_k: float = 5.0,
+) -> float:
+    """Ratio of avg home fouls to avg total fouls when this referee officiates.
+
+    Returns 0.5 (no bias) when there is insufficient data or no referee.
+    Applies Bayesian shrinkage toward 0.5 for low sample counts.
+    """
+    if not referee_name:
+        return 0.5
+
+    home_list: list[float] = []
+    away_list: list[float] = []
+    for p in partidos:
+        if not _same_referee(p.get("referee"), referee_name):
+            continue
+        h = float(p.get("home", {}).get("fouls", 0) or 0)
+        a = float(p.get("away", {}).get("fouls", 0) or 0)
+        if h + a == 0:
+            continue
+        home_list.append(h)
+        away_list.append(a)
+
+    n = len(home_list)
+    if n < min_samples:
+        return 0.5
+
+    avg_home = sum(home_list) / n
+    avg_away = sum(away_list) / n
+    total = avg_home + avg_away
+    if total < 1.0:
+        return 0.5
+
+    raw_bias = avg_home / total
+    alpha = shrinkage_k / (n + shrinkage_k)
+    return round(0.5 * alpha + raw_bias * (1.0 - alpha), 3)
+
+
 def _build_referee_interaction(
     *,
     partidos: list[dict],
@@ -465,12 +507,17 @@ def _build_referee_interaction(
         referee_name=referee_name,
         team_name=eq_visit,
     )
+    home_bias = _calc_referee_home_bias(
+        partidos=partidos,
+        referee_name=referee_name,
+    )
     return {
         "delta_local": d_local,
         "delta_visitante": d_visit,
         "delta_sum": round(d_local + d_visit, 3),
         "n_partidos_local": n_local,
         "n_partidos_visitante": n_visit,
+        "home_bias": home_bias,
     }
 
 

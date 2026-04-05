@@ -348,7 +348,11 @@ def main() -> None:
     parser.add_argument(
         "--jornada", type=int, default=29, help="Numero de jornada (1-38)"
     )
-    parser.add_argument("--fecha", default="2026-03-22", help="Fecha YYYY-MM-DD")
+    parser.add_argument(
+        "--fecha",
+        default=datetime.today().strftime("%Y-%m-%d"),
+        help="Fecha YYYY-MM-DD",
+    )
     parser.add_argument("--arbitro", default=None, help="Nombre del arbitro (opcional)")
 
     parser.add_argument(

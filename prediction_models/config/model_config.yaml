@@ -80,6 +80,11 @@ gating_network:
   lr: 0.001                   # learning rate
   # Temperatura del softmax: 1.0 = normal, >1 = pesos mas uniformes, <1 = mas polarizados
   temperature: 1.0
+  # Piso minimo de peso por capa (garantiza >=10% a cada layer)
+  min_weight: 0.10
+  # Coeficiente del termino de entropia en la funcion de perdida del gating
+  # (-entropy_coeff * H(weights)); mayor => mayor diversidad de pesos
+  entropy_coeff: 0.08
 
 # --- ENSEMBLE (combinacion final) ---
 ensemble:

@@ -150,7 +150,9 @@ class ANFISModel(nn.Module):
         Full ANFIS forward pass.
 
         x: (batch, n_variables) - normalized inputs
-        returns: (mu, log_var) - predicted mean and log-variance of fouls
+        returns: (mu, var) - predicted mean and variance of fouls.
+            var = softplus(raw_var) + 4.0, guaranteed in [4.0, +inf).
+            Callers should clamp var to [4.0, 100.0] before use.
         """
         batch_size = x.shape[0]
 
@@ -194,9 +196,15 @@ class ANFISModel(nn.Module):
             self.output_center
             + torch.tanh(raw_mu / self.output_tanh_temp) * self.output_scale
         )
-        log_var = (normalized_activations * rule_var).sum(dim=1)
 
-        return mu, log_var
+        # AD-2: Re-parameterize variance as softplus(raw) + 4.0.
+        # - softplus(x) >= 0 for all x, so var >= 4.0 (floor enforced at init)
+        # - Provides smooth, non-zero gradients to var_weights and var_bias
+        # - Raw init (bias=1.0): softplus(1.0) ≈ 1.31 → var ≈ 5.31 > 4.0 ✓
+        raw_var = (normalized_activations * rule_var).sum(dim=1)
+        var = torch.nn.functional.softplus(raw_var) + 4.0
+
+        return mu, var
 
 
 class ANFISFoulPredictor:
@@ -211,7 +219,6 @@ class ANFISFoulPredictor:
         "match_intensity",
         "play_style",
         "referee_discipline",
-        "has_market_odds",
     ]
 
     def __init__(
@@ -251,8 +258,11 @@ class ANFISFoulPredictor:
 
     def _extract_features(self, match: dict) -> np.ndarray:
         """
-        Extract 5 fuzzy linguistic variables from match data.
+        Extract 4 fuzzy linguistic variables from match data.
         Each captures a distinct dimension of match character.
+
+        has_market_odds actúa como gate externo: enmascara play_style hacia 0.5
+        cuando no hay cuotas reales, pero no entra al sistema difuso como variable.
         """
         agg_norm = match.get("aggressiveness_norm_total")
         if agg_norm is not None:
@@ -307,9 +317,8 @@ class ANFISFoulPredictor:
             [
                 aggressiveness_combined,
                 match_intensity,
-                play_style,
+                play_style,  # ya enmascarado a 0.5 cuando has_market_odds=0
                 referee_discipline,
-                has_odds,  # indica al ANFIS si el contexto de mercado es fiable
             ],
             dtype=np.float64,
         )
@@ -337,18 +346,19 @@ class ANFISFoulPredictor:
             dataset, batch_size=self.batch_size, shuffle=True
         )
 
-        huber = nn.HuberLoss(delta=5.0)
+        # AD-2: GaussianNLLLoss gives the variance head a direct supervisory
+        # signal: loss = 0.5*(log(var) + (y-mu)^2/var).  Overconfident
+        # predictions (small var, large error) are penalized heavily, so the
+        # network learns to produce higher variance for unpredictable matches.
+        gaussian_nll = nn.GaussianNLLLoss()
 
         self.model.train()
         for epoch in range(self.epochs):
             for X_batch, y_batch in loader:
-                mu, log_var = self.model(X_batch)
-                # Huber loss sobre la media: mas estable que Gaussian NLL
-                loss_mu = huber(mu, y_batch)
-                # Penalizacion de varianza: evita que se colapse a cero
-                var = torch.exp(log_var) + 1e-6
-                loss_var = torch.relu(2.0 - var).mean()
-                loss = loss_mu + 0.1 * loss_var
+                mu, var = self.model(X_batch)
+                # Clamp var to [4.0, 100.0] inside training for numerical safety
+                var_clamped = torch.clamp(var, min=4.0, max=100.0)
+                loss = gaussian_nll(mu, y_batch, var_clamped)
                 optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
@@ -357,15 +367,22 @@ class ANFISFoulPredictor:
         self.model.eval()
 
     def predict_params(self, match: dict) -> tuple[float, float]:
-        """Returns (mu, variance) for a single match."""
+        """Returns (mu, variance) for a single match.
+
+        Variance is clamped to [4.0, 100.0]: the softplus+4.0 re-parameterization
+        guarantees a floor of 4.0; the ceiling prevents extreme values from
+        causing NaN in downstream NegBin alpha computation.
+        """
         X_raw = self._extract_features(match).reshape(1, -1)
         X = self._normalize(X_raw)
         X_t = torch.tensor(X, dtype=torch.float32)
 
         self.model.eval()
         with torch.no_grad():
-            mu, log_var = self.model(X_t)
-            return float(mu.item()), float(torch.exp(log_var).item())
+            mu, var = self.model(X_t)
+            # Clamp variance to [4.0, 100.0] for safety (AD-2)
+            var_clamped = float(torch.clamp(var, min=4.0, max=100.0).item())
+            return float(mu.item()), var_clamped
 
     def predict_pmf(self, match: dict) -> FoulPMF:
         """Convert ANFIS output to a full PMF using NegBin approximation."""

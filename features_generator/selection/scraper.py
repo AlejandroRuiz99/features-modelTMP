@@ -43,6 +43,60 @@ def _calendar_url(season_start: int) -> str:
     )
 
 
+def _detect_chrome_major() -> int | None:
+    """Detecta la versión major del Chrome instalado."""
+    import os
+    import subprocess
+    from pathlib import Path
+
+    local_app = os.environ.get("LOCALAPPDATA", "")
+    candidates = [
+        ["google-chrome", "--version"],
+        ["google-chrome-stable", "--version"],
+        ["chromium-browser", "--version"],
+        [r"C:\Program Files\Google\Chrome\Application\chrome.exe", "--version"],
+        [r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe", "--version"],
+    ]
+    if local_app:
+        candidates.append(
+            [
+                os.path.join(local_app, "Google", "Chrome", "Application", "chrome.exe"),
+                "--version",
+            ]
+        )
+
+    for cmd in candidates:
+        try:
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=5)
+            m = re.search(r"(\d+)\.\d+\.\d+", out.decode())
+            if m:
+                return int(m.group(1))
+        except Exception:
+            continue
+
+    # Fallback: inferir la versión major desde los subdirectorios de instalación
+    search_dirs = []
+    if local_app:
+        search_dirs.append(Path(local_app) / "Google" / "Chrome" / "Application")
+    search_dirs += [
+        Path(r"C:\Program Files\Google\Chrome\Application"),
+        Path(r"C:\Program Files (x86)\Google\Chrome\Application"),
+    ]
+    for app_dir in search_dirs:
+        if not app_dir.exists():
+            continue
+        dirs = sorted(
+            (d for d in app_dir.iterdir() if re.match(r"^\d+\.", d.name)),
+            key=lambda d: [int(x) for x in d.name.split(".")[:2]],
+        )
+        if dirs:
+            m = re.match(r"^(\d+)", dirs[-1].name)
+            if m:
+                return int(m.group(1))
+
+    return None
+
+
 def _create_driver():
     import undetected_chromedriver as uc
 
@@ -50,6 +104,11 @@ def _create_driver():
     opts.add_argument("--no-sandbox")
     opts.add_argument("--disable-dev-shm-usage")
     opts.add_argument("--window-size=1920,1080")
+
+    version = _detect_chrome_major()
+    if version:
+        logger.info("Chrome detectado: versión %d", version)
+        return uc.Chrome(options=opts, version_main=version)
     return uc.Chrome(options=opts)
 
 
@@ -88,6 +147,24 @@ def _extract_date(soup, url: str = "") -> str:
     return ""
 
 
+def _missing_dates_for_season(season_start: int) -> set[str]:
+    """
+    Devuelve el conjunto de fechas (YYYY-MM-DD) que tienen al menos un partido
+    sin posesión en Supabase para la temporada dada.
+    """
+    from selection.supabase_client import _paginate_select, get_client
+
+    season_label = f"{season_start}-{(season_start + 1) % 100:02d}"
+    sb = get_client()
+    rows = _paginate_select(
+        sb,
+        "matches",
+        "match_date",
+        query_fn=lambda q: q.is_("possession_home", "null").eq("season", season_label),
+    )
+    return {r["match_date"] for r in rows}
+
+
 def _scrape_season(driver, season_start: int, already_done: set) -> tuple[int, int]:
     """
     Scrapea posesión de una temporada concreta.
@@ -100,6 +177,17 @@ def _scrape_season(driver, season_start: int, already_done: set) -> tuple[int, i
     season_label = f"{season_start}-{season_start + 1}"
     logger.info("--- Temporada %s ---", season_label)
     logger.debug("URL: %s", url)
+
+    # Fechas con posesión faltante — solo cargamos páginas de esas fechas
+    missing_dates = _missing_dates_for_season(season_start)
+    if not missing_dates:
+        logger.info("Sin fechas pendientes para temporada %s.", season_label)
+        return 0, 0
+    logger.info(
+        "%d fechas con posesion pendiente: %s",
+        len(missing_dates),
+        sorted(missing_dates),
+    )
 
     driver.get(url)
     if not _wait_for_page(driver):
@@ -138,21 +226,25 @@ def _scrape_season(driver, season_start: int, already_done: set) -> tuple[int, i
         raw_date = (
             (td_date.get("csk") or td_date.get_text(strip=True)) if td_date else ""
         )
-        cal_date = raw_date[:10] if len(raw_date) >= 10 else raw_date
+        # csk puede ser "20260320000000" (YYYYMMDD...) o ya "2026-03-20"
+        if raw_date and "-" not in raw_date and len(raw_date) >= 8:
+            cal_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+        else:
+            cal_date = raw_date[:10] if len(raw_date) >= 10 else raw_date
 
         cal_home = normalize(_row_text(tr, *_HOME_STATS))
         cal_away = normalize(_row_text(tr, *_AWAY_STATS))
         match_entries.append((cal_date, cal_home, cal_away, link))
 
     total = len(match_entries)
-    logger.info("%d partidos encontrados en temporada %s", total, season_label)
+    logger.info("%d partidos en calendario; procesando solo los de fechas pendientes.", total)
 
     written = 0
     skipped = 0
 
     for i, (cal_date, cal_home, cal_away, link) in enumerate(match_entries):
-        # Saltar ANTES de cargar la página si ya tenemos los datos en Supabase
-        if cal_date and cal_home and (cal_date, cal_home, cal_away) in already_done:
+        # Saltar si la fecha no tiene ningún partido con posesión faltante
+        if cal_date not in missing_dates:
             skipped += 1
             continue
 
@@ -179,11 +271,6 @@ def _scrape_season(driver, season_start: int, already_done: set) -> tuple[int, i
 
             home_name = normalize(teams[0]) if teams else cal_home
             away_name = normalize(teams[1]) if len(teams) > 1 else cal_away
-
-            if (match_date, home_name, away_name) in already_done:
-                logger.debug("skip  %s vs %s", home_name, away_name)
-                skipped += 1
-                continue
 
             team_stats = soup.find("div", id="team_stats")
             if not team_stats:
@@ -243,15 +330,20 @@ def _seasons_with_missing_possession() -> dict[str, int]:
     """
     Consulta Supabase y devuelve {season_label: n_sin_posesion}
     solo para las temporadas que tienen partidos sin posesión.
+    Usa paginación para cubrir tablas con más de 1000 filas.
     """
-    from selection.supabase_client import get_client
+    from selection.supabase_client import _paginate_select, get_client
 
     sb = get_client()
-    rows = sb.table("matches").select("season,possession_home").execute()
+    rows = _paginate_select(
+        sb,
+        "matches",
+        "season",
+        query_fn=lambda q: q.is_("possession_home", "null"),
+    )
     missing: Counter = Counter()
-    for r in rows.data:
-        if r.get("possession_home") is None:
-            missing[r["season"]] += 1
+    for r in rows:
+        missing[r["season"]] += 1
     return dict(missing)
 
 

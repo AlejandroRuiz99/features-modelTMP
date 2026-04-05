@@ -24,6 +24,44 @@ from assembly.betting_odds import market_features_from_historical_odds
 from core.state_cache import build_state
 from selection import supabase_client
 
+
+# ---------------------------------------------------------------------------
+# Helpers de matchday y season_phase
+# ---------------------------------------------------------------------------
+
+
+def _season_phase_from_date(fecha: str, season: int) -> float:
+    """Fracción 0-1 de la temporada transcurrida en la fecha del partido.
+
+    La Liga arranca ~1 de agosto y termina ~30 de junio del año siguiente.
+    """
+    from datetime import date as _date
+
+    try:
+        d = _date.fromisoformat(fecha[:10])
+        start = _date(season, 8, 1)
+        end = _date(season + 1, 6, 30)
+        total_days = (end - start).days
+        elapsed = (d - start).days
+        return round(max(0.0, min(1.0, elapsed / total_days)), 4)
+    except Exception:
+        return 0.5
+
+
+def _build_team_match_counts(
+    accumulated: list[dict],
+) -> dict[tuple[str, str], int]:
+    """Devuelve {(team, season_str): n_partidos_jugados} sobre el acumulado hasta hoy."""
+    counts: dict[tuple[str, str], int] = {}
+    for p in accumulated:
+        season_str = str(p.get("season", ""))
+        for side in ("home", "away"):
+            team = p.get(side, {}).get("name", "")
+            if team:
+                key = (team, season_str)
+                counts[key] = counts.get(key, 0) + 1
+    return counts
+
 _FOULS_SANITY_MIN = 10
 
 
@@ -87,13 +125,23 @@ class MatchRecord:
 # ---------------------------------------------------------------------------
 
 
-def _build_row(match: MatchRecord, state: dict) -> dict:
+def _build_row(
+    match: MatchRecord,
+    state: dict,
+    team_match_counts: dict[tuple[str, str], int] | None = None,
+) -> dict:
+    # Estimar jornada si no viene de Supabase: nº de partidos previos del local + 1
+    jornada = match.jornada
+    if jornada is None and team_match_counts is not None and match.season is not None:
+        season_str = str(match.season)
+        jornada = team_match_counts.get((match.home, season_str), 0) + 1
+
     feat = build_features(
         state=state,
         equipo_local_input=match.home,
         equipo_visitante_input=match.away,
         arbitro_input=match.referee,
-        jornada=match.jornada,
+        jornada=jornada,
         fecha_partido_input=match.fecha,
         skip_market_fetch=True,
         features_profile="training",
@@ -102,7 +150,12 @@ def _build_row(match: MatchRecord, state: dict) -> dict:
     feat["fouls_total"] = float(match.fouls_total)
     feat["fouls_home"] = float(match.fouls_home)
     feat["fouls_away"] = float(match.fouls_away)
-    feat["matchday"] = match.jornada
+    feat["matchday"] = jornada
+
+    # season_phase desde fecha real — más fiable que jornada / 38
+    if match.season is not None:
+        feat["season_phase"] = _season_phase_from_date(match.fecha, match.season)
+
     if match.season_label:
         feat["season"] = match.season_label
     return feat
@@ -164,37 +217,70 @@ def run(output_path: Path) -> int:
         cal_rows = None
 
     # -- 2. Estado historico ------------------------------------------------
-    logger.info("[3/4] Construyendo estado historico...")
-    state = build_state(partidos, objectives=objectives, calendar_rows=cal_rows)
-    logger.info(
-        "      %d arbitros | %d GMM | %d equipos en calendario",
-        len(state.get("ref_perfiles", {})),
-        len(state.get("perfiles_gmm", {})),
-        len(state.get("cal_index", {})),
-    )
+    # (el estado se construye incrementalmente en el paso 3, walk-forward por fecha)
+    logger.info("[3/4] Estado historico: se construira walk-forward por fecha.")
 
-    # -- 3. Features --------------------------------------------------------
-    logger.info("[4/4] Generando features (%d partidos)...", len(partidos))
+    # -- 3. Features (walk-forward por fecha para evitar data leakage) --------
+    # Cada partido solo puede ver partidos anteriores a su propia fecha.
+    # Se construye el estado una vez por fecha unica (~500 builds vs 1500).
+    logger.info("[4/4] Generando features (%d partidos, walk-forward)...", len(partidos))
     rows: list[dict] = []
     skipped = errors = 0
 
-    for i, p in enumerate(partidos, 1):
-        match = MatchRecord.from_raw(p)
-        if match is None or not match.is_sane():
-            skipped += 1
-            continue
-        try:
-            rows.append(_build_row(match, state))
-        except Exception as e:
-            errors += 1
-            logger.warning(
-                "[ERR] %s vs %s: %s", match.home, match.away, e, exc_info=True
+    partidos_sorted = sorted(
+        partidos,
+        key=lambda p: (p.get("date") or "")[:10],
+    )
+
+    # Agrupar por fecha (YYYY-MM-DD)
+    from collections import defaultdict as _defaultdict
+
+    by_date: dict[str, list[dict]] = _defaultdict(list)
+    for p in partidos_sorted:
+        by_date[(p.get("date") or "")[:10]].append(p)
+
+    accumulated: list[dict] = []
+    total = len(partidos)
+    processed = 0
+
+    for date in sorted(by_date):
+        batch = by_date[date]
+
+        if accumulated:
+            # Estado construido SOLO con partidos anteriores a esta fecha
+            state = build_state(
+                accumulated, objectives=objectives, calendar_rows=cal_rows
             )
-        if i % 200 == 0:
+        # Si accumulated esta vacio (primeros partidos del dataset) no hay
+        # estado historico suficiente — se saltean.
+
+        # Conteo de partidos previos por equipo para estimar jornada
+        team_counts = _build_team_match_counts(accumulated) if accumulated else {}
+
+        for p in batch:
+            processed += 1
+            if not accumulated:
+                skipped += 1
+                continue
+            match = MatchRecord.from_raw(p)
+            if match is None or not match.is_sane():
+                skipped += 1
+                continue
+            try:
+                rows.append(_build_row(match, state, team_match_counts=team_counts))
+            except Exception as e:
+                errors += 1
+                logger.warning(
+                    "[ERR] %s vs %s: %s", match.home, match.away, e, exc_info=True
+                )
+
+        accumulated.extend(batch)
+
+        if processed % 200 == 0 or processed == total:
             logger.info(
                 "      %d/%d — OK:%d skip:%d err:%d",
-                i,
-                len(partidos),
+                processed,
+                total,
                 len(rows),
                 skipped,
                 errors,

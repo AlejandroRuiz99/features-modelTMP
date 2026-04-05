@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit
+# Solo se activa cuando hay cambios staged en archivos de dependencias.
+
+STAGED=$(git diff --cached --name-only 2>/dev/null)
+
+if echo "$STAGED" | grep -qE '(requirements.*\.txt|pyproject\.toml)'; then
+    python scripts/check_outdated_deps.py
+fi

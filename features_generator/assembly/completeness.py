@@ -2,6 +2,21 @@ from __future__ import annotations
 
 from typing import Any
 
+# Penalidades por campo faltante. Campos críticos para el modelo tienen peso mayor.
+# La suma total es >1 intencionalmente: si falta todo, coverage_score queda en 0.0.
+_FIELD_PENALTIES: dict[str, float] = {
+    "arbitro.nombre": 0.15,
+    "arbitro.estadisticas (sin historico GMM)": 0.20,
+    "equipos.local.temporada_completa.faltas_cometidas": 0.15,
+    "equipos.visitante.temporada_completa.faltas_cometidas": 0.15,
+    "metricas_esperadas.xfaltas": 0.20,
+    "metricas_esperadas.agresividad": 0.05,
+    "mercado.faltas_total_ou.linea": 0.05,
+    "mercado.resultado": 0.05,
+    "equipos.local.clasificacion.posicion": 0.03,
+    "equipos.visitante.clasificacion.posicion": 0.03,
+}
+
 
 def build_quality_category(
     contract: dict[str, Any], warnings: list[str]
@@ -10,9 +25,10 @@ def build_quality_category(
     Evalua la completitud del JSON contrato unificado.
 
     Verifica la presencia de los campos criticos que prediction_models necesita
-    para producir predicciones de calidad.
+    para producir predicciones de calidad. Los campos mas importantes para el
+    modelo tienen mayor penalidad que los opcionales (mercado, clasificacion).
     """
-    missing = []
+    missing: list[str] = []
 
     # Arbitro
     if not (contract.get("arbitro", {}).get("nombre") or "").strip():
@@ -46,7 +62,8 @@ def build_quality_category(
     if prob_local is None:
         missing.append("mercado.resultado")
 
-    coverage = max(0.0, 1.0 - len(missing) * 0.15)
+    penalty = sum(_FIELD_PENALTIES.get(f, 0.05) for f in missing)
+    coverage = max(0.0, 1.0 - penalty)
     return {
         "coverage_score": round(coverage, 3),
         "missing_blocks": missing,
