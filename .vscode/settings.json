@@ -4,5 +4,5 @@
     "${workspaceFolder}/prediction_models"
   ],
   "python.analysis.typeCheckingMode": "basic",
-  "python.languageServer": "Pylance"
+  "python.languageServer": "None"
 }
