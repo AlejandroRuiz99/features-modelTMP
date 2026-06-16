@@ -1,0 +1,25 @@
+fixture_id,date,jornada,home,away,fuente,mercado,side_label,linea,p_over_model,edge,bet,odds,actual,won,pnl
+202603143F46EA17,2026-03-14,28,Girona FC,Athletic Club Bilbao,CODERE,Total Fouls,total,26.5,0.4416,0.0855,under,1.95,24,1,0.95
+202603143F46EA17,2026-03-14,28,Girona FC,Athletic Club Bilbao,CODERE,Team Total Fouls,local,12.5,0.3654,0.121,under,1.8,8,1,0.8
+2026031497F1361D,2026-03-14,28,Club Atlético de Madrid,Getafe CF,CODERE,Team Total Fouls,local,11.5,0.5686,0.0957,over,1.95,11,0,-1.0
+2026031497F1361D,2026-03-14,28,Club Atlético de Madrid,Getafe CF,CODERE,Team Total Fouls,visitante,13.5,0.3983,0.0747,under,1.75,11,1,0.75
+2026031448F8DD41,2026-03-14,28,Real Oviedo,Valencia CF,CODERE,Total Fouls,total,26.5,0.3948,0.1052,under,1.85,23,1,0.85
+2026031448F8DD41,2026-03-14,28,Real Oviedo,Valencia CF,CODERE,Team Total Fouls,visitante,12.5,0.4206,0.093,under,1.9,11,1,0.9
+20260314A0FD8936,2026-03-14,28,Real Madrid CF,Elche CF,CODERE,Total Fouls,total,24.5,0.5631,0.0631,over,1.82,32,1,0.82
+20260314A0FD8936,2026-03-14,28,Real Madrid CF,Elche CF,CODERE,Team Total Fouls,visitante,12.5,0.5859,0.0517,over,1.7,21,1,0.7
+20260320F9079C62,2026-03-20,29,Villarreal CF,Real Sociedad de Fútbol,CODERE,Total Fouls,total,24.5,0.5249,0.0519,over,1.95,21,0,-1.0
+20260320F9079C62,2026-03-20,29,Villarreal CF,Real Sociedad de Fútbol,CODERE,Team Total Fouls,local,11.5,0.4362,0.0706,under,1.85,10,1,0.85
+20260320F9079C62,2026-03-20,29,Villarreal CF,Real Sociedad de Fútbol,CODERE,Team Total Fouls,visitante,13.5,0.542,0.0668,over,1.9,11,0,-1.0
+202603226C209867,2026-03-22,29,FC Barcelona,Rayo Vallecano,CODERE,Total Fouls,total,22.5,0.5866,0.0731,over,1.8,23,1,0.8
+2026042455E25B86,2026-04-24,32,Real Betis Balompié,Real Madrid CF,CODERE,Total Fouls,total,22.5,0.6063,0.1063,over,1.82,18,0,-1.0
+20260427C8DDE046,2026-04-27,32,Reial Club Deportiu Espanyol,Levante UD,CODERE,Total Fouls,total,27.5,0.4379,0.0869,under,1.9,27,1,0.9
+20260501D4ED7204,2026-05-01,34,Girona FC,Real Club Deportivo Mallorca,CODERE,Total Fouls,total,23.5,0.5632,0.0509,over,1.78,33,1,0.78
+202605031189F519,2026-05-03,34,Real Club Celta de Vigo,Elche CF,CODERE,Team Total Fouls,local,12.5,0.611,0.1289,over,1.88,14,1,0.88
+202605031189F519,2026-05-03,34,Real Club Celta de Vigo,Elche CF,CODERE,Team Total Fouls,visitante,12.5,0.4579,0.0669,under,1.9,15,0,-1.0
+20260503E99F87CA,2026-05-03,34,Getafe CF,Rayo Vallecano,CODERE,Team Total Fouls,visitante,13.5,0.5357,0.0787,over,2.02,22,1,1.02
+20260503C109C30E,2026-05-03,34,Real Betis Balompié,Real Oviedo,CODERE,Team Total Fouls,local,11.5,0.407,0.1109,under,1.88,9,1,0.88
+20260503C109C30E,2026-05-03,34,Real Betis Balompié,Real Oviedo,CODERE,Team Total Fouls,visitante,13.5,0.5922,0.1171,over,1.9,4,0,-1.0
+20260503F65060A2,2026-05-03,34,Reial Club Deportiu Espanyol,Real Madrid CF,CODERE,Team Total Fouls,local,13.5,0.5855,0.0951,over,1.85,19,1,0.85
+20260503F65060A2,2026-05-03,34,Reial Club Deportiu Espanyol,Real Madrid CF,CODERE,Team Total Fouls,visitante,10.5,0.4415,0.0736,under,1.87,16,0,-1.0
+20260514BE6798C7,2026-05-14,36,Girona FC,Real Sociedad de Fútbol,CODERE,Team Total Fouls,local,11.5,0.4177,0.0553,under,1.75,13,0,-1.0
+20260514BE6798C7,2026-05-14,36,Girona FC,Real Sociedad de Fútbol,CODERE,Team Total Fouls,visitante,14.5,0.5372,0.0748,over,2.0,19,1,1.0

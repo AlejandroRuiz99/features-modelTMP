@@ -190,8 +190,15 @@ def _fetch_and_apply_market(
     cuotas_prepartido: dict | None,
     skip_market_fetch: bool,
     warnings: list[str],
+    fecha_partido: str | None = None,
 ) -> tuple[dict, dict | None, list[str], str | None]:
     """Obtiene cuotas, las fusiona con las del usuario, y ajusta el knowledge pack.
+
+    Args:
+        fecha_partido: Fecha del partido ('YYYY-MM-DD'). Se propaga a
+            `build_market_category` para que el fetch de odds_raw use la
+            ventana de scrapes alrededor del partido en vez de solo el
+            último scrape global.
 
     Returns:
         (kp_ajustado, market_input_model, market_used, odds_scraped_at)
@@ -213,6 +220,7 @@ def _fetch_and_apply_market(
                 eq_local=eq_local,
                 eq_visit=eq_visit,
                 model_market_signal=kp.get("market_signal") or {},
+                match_date=fecha_partido,
             )
         )
 
@@ -642,6 +650,9 @@ def _flatten(raw: dict) -> dict:
         "referee_sigma_estricto": float(arb_stats.get("sigma_estricto", 4.0)),
         "referee_peso_estricto": float(arb_stats.get("peso_estricto", 0.5)),
         "referee_n_partidos": int(arb_stats.get("partidos_arbitrados", 0)),
+        # D1: propagate shrinkage flag so ensemble._register_profiles_from_features
+        # can read it directly without re-inferring from n_partidos (REQ-1).
+        "referee_is_shrunk": bool(arb_stats.get("is_shrunk", False)),
         "ref_home_delta": float(arb_int_local.get("delta_faltas", 0.0)),
         "ref_away_delta": float(arb_int_visitante.get("delta_faltas", 0.0)),
         "ref_pair_delta_sum": (
@@ -667,23 +678,29 @@ def _flatten(raw: dict) -> dict:
         "referee_clean_avg": float(
             arb_stats.get(
                 "fouls_clean_avg",
-                arb_stats.get("mu_permisivo", 22.0) * (1.0 - float(arb_stats.get("peso_estricto", 0.5)))
-                + arb_stats.get("mu_estricto", 30.0) * float(arb_stats.get("peso_estricto", 0.5)),
+                arb_stats.get("mu_permisivo", 22.0)
+                * (1.0 - float(arb_stats.get("peso_estricto", 0.5)))
+                + arb_stats.get("mu_estricto", 30.0)
+                * float(arb_stats.get("peso_estricto", 0.5)),
             )
         ),
         # Árbitro × equipo — nuevas features
         "referee_avg_fouls": round(
-            float(arb_stats.get("mu_permisivo", 22.0)) * (1.0 - float(arb_stats.get("peso_estricto", 0.5)))
-            + float(arb_stats.get("mu_estricto", 30.0)) * float(arb_stats.get("peso_estricto", 0.5)),
+            float(arb_stats.get("mu_permisivo", 22.0))
+            * (1.0 - float(arb_stats.get("peso_estricto", 0.5)))
+            + float(arb_stats.get("mu_estricto", 30.0))
+            * float(arb_stats.get("peso_estricto", 0.5)),
             2,
         ),
         "referee_home_bias": float(arbitro.get("home_bias", 0.5)),
         "referee_team_committed_home": round(
-            float(local_temp.get("faltas_cometidas", 12.0)) + float(arb_int_local.get("delta_faltas", 0.0)),
+            float(local_temp.get("faltas_cometidas", 12.0))
+            + float(arb_int_local.get("delta_faltas", 0.0)),
             2,
         ),
         "referee_team_committed_away": round(
-            float(visitante_temp.get("faltas_cometidas", 12.0)) + float(arb_int_visitante.get("delta_faltas", 0.0)),
+            float(visitante_temp.get("faltas_cometidas", 12.0))
+            + float(arb_int_visitante.get("delta_faltas", 0.0)),
             2,
         ),
         "intensidad_esperada": str(
@@ -749,6 +766,7 @@ def _run_pipeline(
         cuotas_prepartido,
         skip_market_fetch,
         warnings,
+        fecha_partido=fecha_partido_input,
     )
     return _assemble_contract(
         state,

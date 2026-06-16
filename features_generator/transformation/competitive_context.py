@@ -305,13 +305,25 @@ def _get_objective(
     Returns (objetivo_label, urgency_base, competiciones_activas).
     Si el equipo no esta en la tabla: (None, None, False).
     Sin fallback posicional.
+
+    Overlay T3.4b: if 'urgency_base_override' is present in the entry (set by
+    overlay.objective.inject_objectives_into_state), use it directly as a float
+    instead of the integer-keyed _URGENCY_BY_OBJECTIVE lookup.
     """
     obj = objectives.get(team_name)
     if not obj:
         return None, None, False
+
+    # T3.4b: check overlay override first (float); fall back to int-category path
+    urgency_override = obj.get("urgency_base_override")
+    if urgency_override is not None:
+        urgency_base: float | None = float(urgency_override)
+    else:
+        urgency_base = _URGENCY_BY_OBJECTIVE.get(int(obj.get("num_categoria", 5)), 0.25)
+
     return (
         obj.get("objetivo_label"),
-        _URGENCY_BY_OBJECTIVE.get(int(obj.get("num_categoria", 5)), 0.25),
+        urgency_base,
         bool(obj.get("competiciones_activas", False)),
     )
 

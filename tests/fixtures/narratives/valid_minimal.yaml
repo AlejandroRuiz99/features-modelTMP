@@ -1,0 +1,12 @@
+match:
+  home: "Real Madrid"
+  away: "Atletico Madrid"
+  date: "2026-03-22"
+
+objectives:
+  home:
+    label: mid
+  away:
+    label: mid
+
+confidence_level: 3

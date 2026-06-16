@@ -1,0 +1,12 @@
+match:
+  home: "Villarreal"
+  away: "Osasuna"
+  date: "2026-02-15"
+
+objectives:
+  home:
+    label: mid
+  away:
+    label: mid
+
+confidence_level: 2

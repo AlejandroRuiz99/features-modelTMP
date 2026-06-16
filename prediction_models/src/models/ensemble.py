@@ -21,7 +21,11 @@ import torch
 
 from src.models.referee_gmm import RefereeProfiler
 from src.models.naive_bayes import NaiveBayesFoulPredictor
-from src.models.regression import FoulRegressionPredictor, TeamFoulRegressor, HomeFoulRatioEstimator
+from src.models.regression import (
+    FoulRegressionPredictor,
+    TeamFoulRegressor,
+    HomeFoulRatioEstimator,
+)
 from src.models.anfis import ANFISFoulPredictor
 from src.models.gating_network import DynamicEnsembleWeighter
 from src.utils.distributions import FoulPMF, scale_pmf_variance, tilt_pmf_to_mean
@@ -381,15 +385,24 @@ class FoulPredictionEnsemble:
         scale = var_real / var_pred
         return float(np.clip(scale, 0.6, 2.5))
 
+    # Minimum matches for a standalone (non-shrunk) GMM fit.
+    # Must match MIN_MATCHES_STANDALONE in features_generator/transformation/referee_gmm.py.
+    _MIN_MATCHES_STANDALONE: int = 8
+
     def _register_profiles_from_features(self, feature_dicts: list[dict]) -> None:
         """
         Registra perfiles GMM de arbitros desde los feature dicts.
 
         Los parametros GMM (mu_permisivo, sigma_permisivo, mu_estricto, sigma_estricto,
         peso_estricto) ya vienen calculados por features_generator.
+
+        REQ-1: lee ``referee_is_shrunk`` del feature dict cuando esta presente.
+        REQ-2: cuando la key esta ausente (dict legado), infiere is_shrunk desde
+               n < _MIN_MATCHES_STANDALONE y emite un WARNING identificando al arbitro.
         """
-        from src.models.referee_gmm import RefereeProfile
         import numpy as np
+
+        from src.models.referee_gmm import RefereeProfile
 
         for m in feature_dicts:
             ref_name = m.get("referee", "unknown")
@@ -401,12 +414,30 @@ class FoulPredictionEnsemble:
             sig_s = float(m.get("referee_sigma_estricto", 4.0))
             w_s = float(m.get("referee_peso_estricto", 0.5))
             n = int(m.get("referee_n_partidos", 0))
+
+            # REQ-1 / REQ-2: read or infer is_shrunk
+            if "referee_is_shrunk" in m:
+                is_shrunk = bool(m["referee_is_shrunk"])
+            else:
+                # Legacy dict: key absent → infer from n and emit a warning
+                is_shrunk = n < self._MIN_MATCHES_STANDALONE
+                logger.warning(
+                    "referee_is_shrunk missing for '%s' (n=%d); "
+                    "inferred is_shrunk=%s from n < %d. "
+                    "Regenerate features to include the key.",
+                    ref_name,
+                    n,
+                    is_shrunk,
+                    self._MIN_MATCHES_STANDALONE,
+                )
+
             profile = RefereeProfile(
                 name=ref_name,
                 n_matches=n,
                 mu=np.array([mu_p, mu_s]),
                 sigma=np.array([sig_p, sig_s]),
                 weights=np.array([1.0 - w_s, w_s]),
+                is_shrunk=is_shrunk,
             )
             self.referee_profiler.register_profile(profile)
 
@@ -446,6 +477,9 @@ class FoulPredictionEnsemble:
         m["referee_n_matches"] = profile.n_matches
         m["referee_mode"] = 1 if strict_prob > 0.5 else 0
         m["rank_diff_norm"] = float(m.get("rank_diff_norm", rank_diff / 19.0))
+        # REQ-12: low-confidence flag — shrunk profiles with ≤ 2 observed matches
+        # have extremely unreliable GMM parameters (D7).
+        m["referee_low_confidence"] = profile.is_shrunk and profile.n_matches <= 2
 
         return m
 
@@ -488,7 +522,9 @@ class FoulPredictionEnsemble:
         home_f = float(enriched.get("home_fouls_committed_avg", 12.0))
         away_f = float(enriched.get("away_fouls_committed_avg", 12.0))
         if home_f < 11.5 or away_f < 11.5:
-            ref_clean_floor = float(enriched.get("referee_clean_avg", pmf_combined.mean))
+            ref_clean_floor = float(
+                enriched.get("referee_clean_avg", pmf_combined.mean)
+            )
             current_mean = pmf_combined.mean
             if current_mean < ref_clean_floor:
                 target = 0.5 * current_mean + 0.5 * ref_clean_floor
@@ -718,7 +754,10 @@ class FoulPredictionEnsemble:
             "has_team_regressor": self.team_regressor is not None,
             "has_ratio_estimator": self.ratio_estimator is not None,
         }
-        if self.ratio_estimator is not None and self.ratio_estimator._feature_means is not None:
+        if (
+            self.ratio_estimator is not None
+            and self.ratio_estimator._feature_means is not None
+        ):
             norm_arrays["ratio_means"] = np.array(self.ratio_estimator._feature_means)
             norm_arrays["ratio_stds"] = np.array(self.ratio_estimator._feature_stds)
         if self.team_regressor is not None:

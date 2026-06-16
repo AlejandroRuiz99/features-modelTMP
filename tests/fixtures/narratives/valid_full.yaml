@@ -1,0 +1,36 @@
+match:
+  home: "Espanyol"
+  away: "Levante"
+  date: "2026-04-27"
+  competition: "La Liga"
+  jornada: 32
+
+objectives:
+  home:
+    label: salvacion
+    urgency_base: 0.65
+  away:
+    label: descenso
+    urgency_base: 0.80
+
+stakes:
+  home: 4
+  away: 5
+  notes: "Relegation battle"
+
+rotations:
+  home: 0
+  away: 0
+
+intensity_override: 4
+physicality_bias: 1
+referee_factor: 0
+
+special_flags:
+  - stakes_both_relegation
+  - late_season
+  - physical_clash
+
+confidence_level: 4
+
+notes: "Espanyol labeled ucl in objectives but actually in salvacion danger at J32"

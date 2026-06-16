@@ -1,0 +1,4 @@
+fixture_id,date,jornada,home,away,fuente,referee,mercado,side_label,linea,p_over_model,edge,bet,odds,actual,won,pnl
+202508157464C66C,2025-08-15,1,Girona FC,Rayo Vallecano,CONSENSUS_CODERE_STYLE,Alberola Rojas,Team Total Fouls,visitante,13.5,0.5464,0.056,over,1.86,17,1,0.86
+20250816311336D3,2025-08-16,1,Real Club Deportivo Mallorca,FC Barcelona,CONSENSUS_CODERE_STYLE,Munuera Montero,Total Fouls,total,22.5,0.5654,0.0846,over,1.9,25,1,0.9
+20250816311336D3,2025-08-16,1,Real Club Deportivo Mallorca,FC Barcelona,CONSENSUS_CODERE_STYLE,Munuera Montero,Team Total Fouls,visitante,10.5,0.4381,0.0661,under,1.84,17,0,-1.0

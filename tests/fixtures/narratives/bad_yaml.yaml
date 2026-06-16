@@ -1,0 +1,6 @@
+match:
+  home: "Team A"
+  away: "Team B"
+  date: "2026-01-01"
+confidence_level: [invalid yaml here
+  - missing bracket

@@ -23,10 +23,56 @@ import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
+from scipy.stats import rankdata
+
+# Minimum matches for a referee to be considered standalone (not shrunk)
+MIN_MATCHES_STANDALONE = 8
+
+
+def compute_percentile_target(weight_strict_values: np.ndarray) -> np.ndarray:
+    """Compute the league-percentile rank of each referee's weight_strict.
+
+    Maps each value to its rank percentile among all training referees,
+    ensuring a monotonic, variance-rich target in [0, 1].
+
+    Args:
+        weight_strict_values: 1-D array of weight_strict values for N referees.
+
+    Returns:
+        1-D array of percentile ranks in [0, 1] (average method for ties).
+    """
+    values = np.asarray(weight_strict_values, dtype=float)
+    n = len(values)
+    if n == 0:
+        return np.array([], dtype=float)
+    # rankdata uses 'average' method → ties get the same rank
+    ranks = rankdata(values, method="average")
+    return ranks / n
+
+
+def filter_training_rows_by_n(
+    df: pd.DataFrame,
+    n_col: str = "referee_n_partidos",
+    min_n: int = MIN_MATCHES_STANDALONE,
+) -> pd.DataFrame:
+    """Filter a training DataFrame to only include rows where n >= min_n.
+
+    Per REQ-8: referees with fewer than MIN_MATCHES_STANDALONE matches are
+    excluded from the training split (they can remain in validation).
+
+    Args:
+        df: DataFrame with at least a column named ``n_col``.
+        n_col: Column name holding the match count per referee.
+        min_n: Minimum match count threshold (default: MIN_MATCHES_STANDALONE=8).
+
+    Returns:
+        Filtered DataFrame (subset of ``df``) preserving the original index.
+    """
+    return df[df[n_col] >= min_n]
 
 
 @dataclass
@@ -161,6 +207,10 @@ class RefereeProfiler:
         self.profiles: dict[str, RefereeProfile] = {}
         self.mode_selector = ModeSelector()
         self._optimizer: torch.optim.Adam | None = None
+        # D3: training-time gate decision persisted in checkpoint.
+        # When True, predict_mode() returns profile.weight_strict directly
+        # without invoking the MLP (static passthrough / fallback mode).
+        self.use_static_fallback: bool = False
 
     def register_profile(self, profile: RefereeProfile) -> None:
         """Registra un perfil precalculado."""
@@ -218,6 +268,10 @@ class RefereeProfiler:
         ref_pair_delta_sum: float = 0.0,
         pace_index_curr: float = 31.0,
     ) -> float:
+        # D3: static fallback — skip MLP entirely, return weight_strict directly.
+        if self.use_static_fallback:
+            return self.get_profile(referee_name).weight_strict
+
         ctx = self.build_context_vector(
             referee_name,
             is_derby,
@@ -304,8 +358,14 @@ class RefereeProfiler:
                 "weights": p.weights.tolist(),
                 "is_shrunk": p.is_shrunk,
             }
+        # D3: persist fallback flag alongside profiles so inference-time
+        # load() can restore the gate decision without re-running gates.
+        checkpoint = {
+            "profiles": profiles_data,
+            "use_static_fallback": self.use_static_fallback,
+        }
         with open(path / "profiles.pkl", "wb") as f:
-            pickle.dump(profiles_data, f)
+            pickle.dump(checkpoint, f)
 
         torch.save(self.mode_selector.state_dict(), path / "mode_selector.pt")
 
@@ -315,7 +375,19 @@ class RefereeProfiler:
         profiles_path = path / "profiles.pkl"
         if profiles_path.exists():
             with open(profiles_path, "rb") as f:
-                profiles_data = pickle.load(f)
+                raw = pickle.load(f)
+
+            # D8: backward compatibility — old format was a flat dict of profiles.
+            # New format is {"profiles": {...}, "use_static_fallback": bool}.
+            if isinstance(raw, dict) and "profiles" in raw:
+                profiles_data = raw["profiles"]
+                # Default to False for old checkpoints that lack the key (D8).
+                self.use_static_fallback = bool(raw.get("use_static_fallback", False))
+            else:
+                # Legacy flat format: raw is profiles_data directly
+                profiles_data = raw
+                self.use_static_fallback = False
+
             for name, data in profiles_data.items():
                 self.profiles[name] = RefereeProfile(
                     name=name,

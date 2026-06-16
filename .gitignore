@@ -132,6 +132,13 @@ mlartifacts/
 features_j*.json
 jornada_*_predictions.json
 
+# Stray prediction artifacts (use runs/ folder instead)
+/partidos_*.json
+/resultados_*.json
+/features_dump*.json
+/informe_*.pdf
+/nul
+
 # Cache de datos descargados
 .cache/
 data/raw/
@@ -150,3 +157,8 @@ logs/
 .aider*
 .cursor/
 .openai/
+
+# -----------------------------------------------------------
+# Work-in-progress (local only — do not upload)
+# -----------------------------------------------------------
+HWFP/

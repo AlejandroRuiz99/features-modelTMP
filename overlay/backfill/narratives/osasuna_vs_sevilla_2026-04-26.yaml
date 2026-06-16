@@ -1,0 +1,51 @@
+# DRAFT — review before production use
+# J32 Sunday — Osasuna vs Sevilla (Ortiz Arias)
+# Source: engram obs #238, #239 (J32 2026-04-26 predictions)
+
+match:
+  home: "Osasuna"
+  away: "Sevilla"
+  date: "2026-04-26"
+  competition: "La Liga"
+  jornada: 32
+
+objectives:
+  home:
+    # Osasuna mid-table, no strong objective pressure
+    label: mid
+    urgency_base: 0.29
+  away:
+    # Sevilla fighting to return to Europe (historically UCL club, now chasing UEL)
+    label: europa
+    urgency_base: 0.79
+
+stakes:
+  home: 2
+  away: 4
+  notes: >
+    Asymmetric match: Osasuna mid-table comfort, Sevilla still hunting European spot.
+    Sevilla's urgency drives tempo but Osasuna's physical home style resists.
+
+rotations:
+  home: 0
+  away: 0
+
+intensity_override: 3
+physicality_bias: 0
+
+# Ortiz Arias: p_estricto=39% — permisivo leaning
+# ref_home_delta=-0.94 for Osasuna (permisive with them at home)
+# Model predicted 23.15 total — well under market 26.5
+referee_factor: -1
+
+special_flags:
+  - late_season
+
+confidence_level: 3
+
+notes: >
+  Engram obs #238: model 23.15 total vs market 26.5 (Δ=-3.4). Strong UNDER signal.
+  Picks: Osasuna-Sevilla UNDER 26.5 @ 1.82 (edge +13.81%) +
+  Osasuna UNDER 13.5 @ 1.70 (edge +13.24%).
+  Ref Ortiz Arias: p_estricto=39%, ref_home_delta=-0.94 for Osasuna (permisivo local).
+  Codere had match inverted (Sevilla vs Osasuna) — substring match fixed it.

@@ -1,0 +1,56 @@
+# DRAFT — review before production use
+# J33 Thursday — Oviedo vs Villarreal (De Burgos Bengoetxea)
+# Source: engram obs #235 (Informe J33 23 abril 2026 - Concentracion Oviedo-Villarreal UNDER)
+
+match:
+  home: "Oviedo"
+  away: "Villarreal"
+  date: "2026-04-23"
+  competition: "La Liga"
+  jornada: 33
+
+objectives:
+  home:
+    # Oviedo fighting relegation — 17th or borderline
+    label: descenso
+    urgency_base: 0.80
+  away:
+    # Villarreal corrected to UEL (3rd, 61pts) — comfortable, not top4
+    label: europa
+    urgency_base: 0.45
+
+stakes:
+  home: 5
+  away: 2
+  notes: >
+    Oviedo in relegation zone — maximum stakes for home side.
+    Villarreal comfortable in UEL spot, low urgency; category corrected
+    from top4 (num_categoria 2) to UEL (num_categoria 3) per Supabase fix.
+
+rotations:
+  home: 0
+  away: 1
+
+intensity_override: 2
+physicality_bias: 0
+
+# De Burgos Bengoetxea — permissivo (22% strict, n=52)
+# Model predicted total = 20.87 vs market line 24.5 → Δ = -3.63 (strong UNDER signal)
+# Villarreal forma reciente fouls = 9.8; aggr_volume_away lower
+referee_factor: -1
+
+special_flags:
+  - late_season
+
+confidence_level: 4
+
+notes: >
+  Engram obs #235: model predicts Oviedo-Villa total = 20.87 vs line 24.5 (gap -3.6 fouls).
+  De Burgos permisivo (22% strict, n=52) supports fewer fouls called.
+  Villarreal delta -1.54 (forma tends to commit fewer fouls recently).
+  Final picks: UNDER 24.5 @ 1.90 (edge +23.0%, stake 180 EUR) +
+               Villarreal UNDER 12.5 @ 1.67 (edge +16.0%, stake 120 EUR).
+  EV portfolio: +61 EUR (+20.4% on stake).
+  Referee name fix applied: "Adrian Cordero" → "Cordero Vega" (n=33, p_strict=77% —
+  wait, De Burgos is the correct referee per the report; Cordero Vega was a data issue).
+  Supabase corrections: Sevilla num_cat 5→6, Vallecano 5→6, Villarreal 2→3.

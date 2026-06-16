@@ -63,6 +63,10 @@ ignore = [
     "N816",   # mixedCase variable in global scope (allow during migration)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Test helpers that manipulate sys.path before overlay imports (E402 is intentional)
+"tests/**/*.py" = ["E402"]
+
 [tool.ruff.lint.isort]
 known-first-party = [
     "core",
@@ -91,3 +95,4 @@ reportMissingTypeStubs = false
 testpaths = ["tests"]
 pythonpath = [".", "features_generator", "prediction_models"]
 addopts = "-v --tb=short"
+python_files = ["test_*.py", "contract_*.py"]

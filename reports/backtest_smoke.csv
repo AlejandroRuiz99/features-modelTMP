@@ -1,0 +1,7 @@
+fixture_id,date,jornada,home,away,fuente,mercado,side_label,linea,p_over_model,edge,bet,odds,actual,won,pnl
+202603143F46EA17,2026-03-14,28,Girona FC,Athletic Club Bilbao,CODERE,Total Fouls,total,26.5,0.4416,0.0855,under,1.95,24,1,0.95
+202603143F46EA17,2026-03-14,28,Girona FC,Athletic Club Bilbao,CODERE,Team Total Fouls,local,12.5,0.3654,0.121,under,1.8,8,1,0.8
+2026031497F1361D,2026-03-14,28,Club Atlético de Madrid,Getafe CF,CODERE,Team Total Fouls,local,11.5,0.5686,0.0957,over,1.95,11,0,-1.0
+2026031497F1361D,2026-03-14,28,Club Atlético de Madrid,Getafe CF,CODERE,Team Total Fouls,visitante,13.5,0.3983,0.0747,under,1.75,11,1,0.75
+2026031448F8DD41,2026-03-14,28,Real Oviedo,Valencia CF,CODERE,Total Fouls,total,26.5,0.3948,0.1052,under,1.85,23,1,0.85
+2026031448F8DD41,2026-03-14,28,Real Oviedo,Valencia CF,CODERE,Team Total Fouls,visitante,12.5,0.4206,0.093,under,1.9,11,1,0.9

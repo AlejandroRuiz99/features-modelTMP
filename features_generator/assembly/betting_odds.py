@@ -264,13 +264,22 @@ def build_market_category(
     eq_local: str,
     eq_visit: str,
     model_market_signal: dict[str, Any],
+    match_date: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], list[str], str | None]:
     """Orquesta la construccion completa de la categoria de mercado.
+
+    Args:
+        match_date: Fecha del partido ISO 'YYYY-MM-DD'. Si se pasa, el fetch
+            de cuotas busca en una ventana de varios días alrededor (para
+            capturar scrapes diarios del bookmaker). Si es None, solo se
+            mira el último scrape global (comportamiento legacy).
 
     Returns:
         (market_category, market_input_model, mercados_usados, scraped_at)
     """
-    rows, scraped_at, event_id = get_match_odds_rows(scores, eq_local, eq_visit)
+    rows, scraped_at, event_id = get_match_odds_rows(
+        scores, eq_local, eq_visit, match_date=match_date
+    )
 
     available = sorted(
         {name for r in rows if (name := (r.get("mercado") or "").strip())}

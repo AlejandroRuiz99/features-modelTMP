@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 
-from supabase import create_client, Client
+from supabase import Client, create_client
 
 logger = logging.getLogger(__name__)
 
@@ -202,50 +202,6 @@ def update_possession_single(
         return False
 
 
-def fetch_laliga_objectives() -> dict[str, dict]:
-    """
-    Descarga la tabla laliga_objectives y devuelve un dict indexado por equipo.
-
-    Retorna:
-        {
-          "Barcelona": {
-            "categoria": "Título",
-            "num_categoria": 1,
-            "objetivo_label": "titulo",
-            "competiciones_activas": True,
-          },
-          ...
-        }
-    """
-    _LABEL_MAP = {
-        1: "titulo",
-        2: "top4",
-        3: "uel",
-        4: "uecl",
-        5: "media_tabla",
-        6: "descenso",
-    }
-    sb = get_client()
-    rows = (
-        sb.table("laliga_objectives")
-        .select("equipo,categoria,num_categoria,competiciones_activas")
-        .execute()
-    )
-    result: dict[str, dict] = {}
-    for r in rows.data or []:
-        equipo = (r.get("equipo") or "").strip()
-        if not equipo:
-            continue
-        num = int(r.get("num_categoria") or 5)
-        result[equipo] = {
-            "categoria": r.get("categoria", ""),
-            "num_categoria": num,
-            "objetivo_label": _LABEL_MAP.get(num, "media_tabla"),
-            "competiciones_activas": bool(r.get("competiciones_activas", False)),
-        }
-    return result
-
-
 def fetch_liga_calendar() -> list[dict]:
     """
     Descarga toda la tabla liga_calendar (partidos multi-competición de equipos
@@ -259,6 +215,27 @@ def fetch_liga_calendar() -> list[dict]:
         sb,
         "liga_calendar",
         "home_team,away_team,match_date,match_time,competition,season,status,round",
+        order="match_date",
+    )
+    return rows
+
+
+def fetch_matches_for_season(season_str: str) -> list[dict]:
+    """
+    Return all matches for a given season from Supabase.
+
+    Args:
+        season_str: Season in Supabase format, e.g. '2025-26'.
+
+    Returns:
+        List of dicts with at least: home_team, away_team (raw names as stored).
+    """
+    sb = get_client()
+    rows = _paginate_select(
+        sb,
+        "matches",
+        "home_team,away_team,match_date",
+        query_fn=lambda q: q.eq("season", season_str),
         order="match_date",
     )
     return rows
@@ -310,3 +287,114 @@ def fetch_latest_odds_rows(sport: str = "soccer") -> dict:
         offset += page_size
 
     return {"scraped_at": scraped_at, "rows": rows}
+
+
+def fetch_odds_rows_for_match_window(
+    match_date: str,
+    *,
+    sport: str = "soccer",
+    days_before: int = 4,
+    days_after: int = 1,
+) -> dict:
+    """
+    Devuelve todas las filas de odds_raw cuyo scraped_at cae dentro de una
+    ventana alrededor de la fecha del partido.
+
+    El scraper externo de Codere corre diariamente y cada scrape solo captura
+    los eventos activos ese día. Un partido del sábado puede estar en el
+    scrape del jueves/viernes pero no en el del lunes. Por eso filtrar por
+    `MAX(scraped_at)` (como hace `fetch_latest_odds_rows`) pierde la mayor
+    parte de la jornada cuando los partidos se reparten en varios días.
+
+    Args:
+        match_date: Fecha del partido en formato ISO ("YYYY-MM-DD").
+        sport: Deporte a filtrar (por defecto 'soccer').
+        days_before: Cuántos días antes del partido incluir en la ventana
+            (por defecto 4, cubre el fin de semana típico + margen).
+        days_after: Cuántos días después del partido incluir (por defecto 1,
+            para capturar scrapes del mismo día tras el kickoff).
+
+    Retorna:
+      {
+        "window_start": "YYYY-MM-DDTHH:MM:SS+00:00",
+        "window_end":   "YYYY-MM-DDTHH:MM:SS+00:00",
+        "latest_scraped_at": str | None,
+        "rows": [row...]
+      }
+
+    Raises:
+        ValueError: Si `match_date` no es parseable como fecha ISO.
+    """
+    from datetime import date, datetime, timedelta, timezone
+
+    # Parse match_date (accept "YYYY-MM-DD" or full ISO timestamps)
+    if not match_date:
+        raise ValueError("match_date is required for fetch_odds_rows_for_match_window")
+    try:
+        if "T" in match_date:
+            # Already a datetime; strip to date
+            base_dt = datetime.fromisoformat(match_date.replace("Z", "+00:00"))
+            base_date = base_dt.date()
+        else:
+            base_date = date.fromisoformat(match_date)
+    except ValueError as exc:
+        raise ValueError(
+            f"match_date must be ISO format (YYYY-MM-DD), got: {match_date!r}"
+        ) from exc
+
+    start = datetime.combine(
+        base_date - timedelta(days=days_before),
+        datetime.min.time(),
+        tzinfo=timezone.utc,
+    )
+    end = datetime.combine(
+        base_date + timedelta(days=days_after),
+        datetime.max.time().replace(microsecond=0),
+        tzinfo=timezone.utc,
+    )
+    start_iso = start.isoformat()
+    end_iso = end.isoformat()
+
+    sb = get_client()
+    page_size = 1000
+    offset = 0
+    rows: list[dict] = []
+    latest_in_window: str | None = None
+    while True:
+        q = (
+            sb.table("odds_raw")
+            .select(
+                "home_team,away_team,mercado,selection,cuota,external_event_id,partido,sport,scraped_at"
+            )
+            .gte("scraped_at", start_iso)
+            .lte("scraped_at", end_iso)
+            .range(offset, offset + page_size - 1)
+        )
+        if sport:
+            q = q.eq("sport", sport)
+        r = q.execute()
+        chunk = r.data or []
+        rows.extend(chunk)
+        for row in chunk:
+            sa = row.get("scraped_at")
+            if sa and (latest_in_window is None or sa > latest_in_window):
+                latest_in_window = sa
+        if len(chunk) < page_size:
+            break
+        offset += page_size
+        if offset > 100000:
+            # Safety guard against runaway queries
+            logger.warning(
+                "fetch_odds_rows_for_match_window truncated at 100k rows "
+                "for window %s..%s",
+                start_iso,
+                end_iso,
+            )
+            break
+
+    return {
+        "window_start": start_iso,
+        "window_end": end_iso,
+        "latest_scraped_at": latest_in_window,
+        "rows": rows,
+    }

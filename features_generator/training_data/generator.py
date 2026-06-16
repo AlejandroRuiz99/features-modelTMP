@@ -62,6 +62,7 @@ def _build_team_match_counts(
                 counts[key] = counts.get(key, 0) + 1
     return counts
 
+
 _FOULS_SANITY_MIN = 10
 
 
@@ -203,12 +204,9 @@ def run(output_path: Path) -> int:
         return 0
     logger.info("      %d partidos", len(partidos))
 
-    logger.info("[2/4] Cargando objectives y calendario...")
-    try:
-        objectives = supabase_client.fetch_laliga_objectives()
-    except Exception as e:
-        logger.warning("Sin objectives: %s", e, exc_info=True)
-        objectives = {}
+    logger.info("[2/4] Cargando calendario...")
+    # D17: objectives are no longer fetched from Supabase — injected per-match via overlay.
+    objectives = {}
     try:
         cal_rows = supabase_client.fetch_liga_calendar()
         logger.info("      %d filas de calendario", len(cal_rows))
@@ -223,7 +221,9 @@ def run(output_path: Path) -> int:
     # -- 3. Features (walk-forward por fecha para evitar data leakage) --------
     # Cada partido solo puede ver partidos anteriores a su propia fecha.
     # Se construye el estado una vez por fecha unica (~500 builds vs 1500).
-    logger.info("[4/4] Generando features (%d partidos, walk-forward)...", len(partidos))
+    logger.info(
+        "[4/4] Generando features (%d partidos, walk-forward)...", len(partidos)
+    )
     rows: list[dict] = []
     skipped = errors = 0
 

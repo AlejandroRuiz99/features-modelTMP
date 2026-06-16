@@ -118,14 +118,9 @@ def _load_from_supabase() -> dict:
     if not partidos:
         raise RuntimeError("No hay partidos disponibles en Supabase.")
 
-    try:
-        objectives = supabase_client.fetch_laliga_objectives()
-    except Exception:
-        logger.warning(
-            "No se pudieron cargar los objectives de LaLiga; se usara dict vacio.",
-            exc_info=True,
-        )
-        objectives = {}
+    # D17: objectives are now injected per-match via overlay (narrative YAML).
+    # No longer fetched from Supabase.
+    objectives = {}
 
     try:
         calendar_rows = supabase_client.fetch_liga_calendar()

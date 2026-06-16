@@ -1,0 +1,279 @@
+# overlay/rules.yaml — Context-aware overlay rule catalog
+#
+# Schema per rule:
+#   id:          str (unique, snake_case)
+#   description: str (human-readable intent)
+#   enabled:     bool
+#   direction:   up | down | volatility
+#   when:        DSL condition block (all / any / not / leaf conditions)
+#   effect:
+#     delta_fouls:    float in [-1.0, +1.0]   (signed; 0.0 if omitted)
+#     variance_scale: float in [1.0, 1.5]     (1.0 = identity; omit = 1.0)
+#     kelly_scale:    float in [0.25, 1.0]    (1.0 = no reduction; omit = 1.0)
+#
+# Loaded by: overlay/rules.py:load_catalog()
+# Magnitude bounds enforced at load time (per REQ-5.4).
+# Aggregate cap delta_fouls ±2.0 enforced at evaluation time.
+
+rules:
+
+  # =========================================================================
+  # UP rules — more fouls expected
+  # =========================================================================
+
+  - id: both_relegation_up
+    description: "Both teams fighting relegation → higher intensity and more fouls"
+    enabled: true
+    direction: up
+    when:
+      all:
+        - field: objectives.home.label
+          in: [descenso, salvacion]
+        - field: objectives.away.label
+          in: [descenso, salvacion]
+    effect:
+      delta_fouls: 0.8
+      variance_scale: 1.15
+      kelly_scale: 0.85
+
+  - id: one_relegation_high_stakes_up
+    description: "One team in relegation with high stakes from the opponent → moderate uplift"
+    enabled: true
+    direction: up
+    when:
+      any:
+        - all:
+            - field: objectives.home.label
+              in: [descenso, salvacion]
+            - field: stakes.away
+              gte: 3
+        - all:
+            - field: objectives.away.label
+              in: [descenso, salvacion]
+            - field: stakes.home
+              gte: 3
+    effect:
+      delta_fouls: 0.5
+      variance_scale: 1.10
+      kelly_scale: 0.90
+
+  - id: derbi_intensity_up
+    description: "Derby match → physical intensity rises"
+    enabled: true
+    direction: up
+    when:
+      all:
+        - flag_present: derbi
+    effect:
+      delta_fouls: 0.6
+      variance_scale: 1.10
+      kelly_scale: 0.90
+
+  - id: physical_clash_up
+    description: "Physical clash flag + physicality bias ≥ 1 → more contact"
+    enabled: true
+    direction: up
+    when:
+      all:
+        - flag_present: physical_clash
+        - field: physicality_bias
+          gte: 1
+    effect:
+      delta_fouls: 0.5
+      variance_scale: 1.05
+      kelly_scale: 0.95
+
+  - id: coach_pressure_up
+    description: "Coach under pressure + high intensity expected → desperate tactics"
+    enabled: true
+    direction: up
+    when:
+      all:
+        - flag_present: coach_pressure
+        - field: intensity_override
+          gte: 3
+    effect:
+      delta_fouls: 0.4
+      variance_scale: 1.10
+      kelly_scale: 0.90
+
+  - id: last_round_drama_up
+    description: "Final matchday drama with maximum stakes for both teams"
+    enabled: true
+    direction: up
+    when:
+      all:
+        - flag_present: last_round_drama
+        - field: stakes.home
+          gte: 4
+        - field: stakes.away
+          gte: 4
+    effect:
+      delta_fouls: 0.7
+      variance_scale: 1.20
+      kelly_scale: 0.80
+
+  - id: strict_ref_physical_up
+    description: "Strict referee + physical match → more whistles, more fouls"
+    enabled: true
+    direction: up
+    when:
+      all:
+        - flag_present: strict_ref_announced
+        - field: physicality_bias
+          gte: 1
+    effect:
+      delta_fouls: 0.4
+      variance_scale: 1.05
+      kelly_scale: 0.95
+
+  - id: high_intensity_override_up
+    description: "User signals very high intensity AND physical bias → uplift"
+    enabled: true
+    direction: up
+    when:
+      all:
+        - field: intensity_override
+          gte: 4
+        - field: physicality_bias
+          gte: 1
+    effect:
+      delta_fouls: 0.6
+      variance_scale: 1.10
+      kelly_scale: 0.90
+
+  # =========================================================================
+  # DOWN rules — fewer fouls expected
+  # =========================================================================
+
+  - id: dead_rubber_down
+    description: "Meaningless match for both teams → low motivation and intensity"
+    enabled: true
+    direction: down
+    when:
+      all:
+        - flag_present: dead_rubber
+        - field: stakes.home
+          lte: 1
+        - field: stakes.away
+          lte: 1
+    effect:
+      delta_fouls: -0.8
+      variance_scale: 1.10
+      kelly_scale: 0.85
+
+  - id: heavy_rotations_both_down
+    description: "Both teams rotating heavily → second string less committed"
+    enabled: true
+    direction: down
+    when:
+      all:
+        - field: rotations.home
+          gte: 3
+        - field: rotations.away
+          gte: 3
+    effect:
+      delta_fouls: -0.7
+      variance_scale: 1.10
+      kelly_scale: 0.85
+
+  - id: one_team_rotation_down
+    description: "One team resting starters heavily → intensity gap"
+    enabled: true
+    direction: down
+    when:
+      any:
+        - field: rotations.home
+          gte: 4
+        - field: rotations.away
+          gte: 4
+    effect:
+      delta_fouls: -0.4
+      variance_scale: 1.05
+      kelly_scale: 0.90
+
+  - id: permissive_ref_technical_down
+    description: "Permissive referee in non-physical match → fewer fouls called"
+    enabled: true
+    direction: down
+    when:
+      all:
+        - flag_present: permissive_ref_announced
+        - field: physicality_bias
+          lte: 0
+    effect:
+      delta_fouls: -0.5
+      variance_scale: 1.05
+      kelly_scale: 0.95
+
+  - id: b_team_expected_down
+    description: "B-team or major rotations expected → lower commitment"
+    enabled: true
+    direction: down
+    when:
+      all:
+        - flag_present: b_team_expected
+    effect:
+      delta_fouls: -0.6
+      variance_scale: 1.10
+      kelly_scale: 0.80
+
+  - id: european_fatigue_down
+    description: "European midweek match → fatigue reduces intensity"
+    enabled: true
+    direction: down
+    when:
+      all:
+        - flag_present: european_midweek
+        - field: rotations.home
+          lte: 1
+        - field: rotations.away
+          lte: 1
+    effect:
+      delta_fouls: -0.4
+      variance_scale: 1.10
+      kelly_scale: 0.90
+
+  - id: copa_extra_time_fatigue_down
+    description: "Recent Copa extra time → physical fatigue reduces foul rate"
+    enabled: true
+    direction: down
+    when:
+      all:
+        - flag_present: copa_recent_extra_time
+    effect:
+      delta_fouls: -0.3
+      variance_scale: 1.15
+      kelly_scale: 0.85
+
+  # =========================================================================
+  # VOLATILITY rules — uncertainty signal; NO delta_fouls applied
+  # These widen the variance and/or reduce kelly but do NOT shift the mean.
+  # They do NOT count toward the ≥2 same-direction gate (delta_fouls = 0.0).
+  # =========================================================================
+
+  - id: coach_pressure_volatile
+    description: "Coach under pressure or debut → elevated uncertainty, no clear directional bias"
+    enabled: true
+    direction: volatility
+    when:
+      any:
+        - flag_present: coach_pressure
+        - flag_present: coach_debut
+    effect:
+      delta_fouls: 0.0
+      variance_scale: 1.15
+      kelly_scale: 0.90
+
+  - id: key_injuries_disrupted_volatile
+    description: "Key injuries reported → squad disruption elevates variance but direction unclear"
+    enabled: true
+    direction: volatility
+    when:
+      any:
+        - flag_present: key_injuries_home
+        - flag_present: key_injuries_away
+    effect:
+      delta_fouls: 0.0
+      variance_scale: 1.10
+      kelly_scale: 0.90

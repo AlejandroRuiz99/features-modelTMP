@@ -1,0 +1,52 @@
+# DRAFT — review before production use
+# J34 Saturday — Atlético vs Athletic Club (Gil Manzano)
+# Source: engram obs #236 (Informe J34 sábado 25-abr-2026)
+
+match:
+  home: "Atlético"
+  away: "Athletic"
+  date: "2026-04-25"
+  competition: "La Liga"
+  jornada: 34
+
+objectives:
+  home:
+    # Atlético hunting Champions League qualification
+    label: ucl
+    urgency_base: 0.75
+  away:
+    # Athletic also in European hunt
+    label: europa
+    urgency_base: 0.60
+
+stakes:
+  home: 4
+  away: 3
+  notes: >
+    UCL race for Atlético, Athletic hunting Europa. Both motivated but
+    Gil Manzano is permissive with Atlético at home (ref_home_delta=-0.82).
+
+rotations:
+  home: 0
+  away: 0
+
+intensity_override: 3
+physicality_bias: 0
+
+# Gil Manzano: known permissive with Atlético at home (ref_home_delta=-0.82)
+# Model predicted 22.01 total vs market 23.5 (Δ=-1.5) — UNDER
+# ANFIS weight only 18% in this match (lower confidence)
+referee_factor: -1
+
+special_flags:
+  - late_season
+
+confidence_level: 3
+
+notes: >
+  Engram obs #236: model 22.01 total vs market 23.5 (Δ=-1.5).
+  Pick: Atlético UNDER 11.5 @ 1.70, edge +14.42%, stake €25.75.
+  is_derby flag does NOT fire for Atlético-Athletic (not in rivalry pairs list).
+  ANFIS weight only 18% here vs ~41% in other matches — prediction exposed to regression bias.
+  Gil Manzano ref_home_delta=-0.82 for Atlético: permissive when Atleti at home.
+  home_expected (10.16) < away_expected (11.84) due to this ref_home_delta effect.

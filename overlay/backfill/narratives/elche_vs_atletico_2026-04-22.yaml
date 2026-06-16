@@ -1,0 +1,57 @@
+# DRAFT — review before production use
+# J33 Wednesday — Elche vs Atlético (Cuadra Fernández)
+# Source: engram obs #233 (J33 22 april 2026) + #234 (v2 with Copa factor)
+
+match:
+  home: "Elche"
+  away: "Atlético"
+  date: "2026-04-22"
+  competition: "La Liga"
+  jornada: 33
+
+objectives:
+  home:
+    # Elche in relegation fight
+    label: descenso
+    urgency_base: 0.80
+  away:
+    # Atlético chasing UCL — but Copa del Rey final fatigue is key factor here
+    label: ucl
+    urgency_base: 0.75
+
+stakes:
+  home: 5
+  away: 3
+  notes: >
+    Elche desperate relegation battle at home.
+    Atlético physically exhausted after Copa del Rey final (18 April, 120min + penalties).
+    Atletico LOST the final — mental and physical fatigue combined.
+
+rotations:
+  home: 0
+  # Atlético may rotate 1-2 players due to Copa fatigue
+  away: 1
+
+intensity_override: 3
+physicality_bias: 0
+
+# Cuadra Fernández — average ref
+# Model predicted 23.99 total (Elche 9.19, Atlético 14.79) — unusual home/away asymmetry
+# Atlético's fatigue suppresses their usual foul rate
+referee_factor: 0
+
+special_flags:
+  - copa_recent_extra_time
+  - stakes_one_relegation
+  - late_season
+
+confidence_level: 4
+
+notes: >
+  Engram obs #233 + #234: after Copa factor applied, main pick was
+  Elche UNDER 11.5 @ 1.75, edge +26.6%, stake €160.
+  Key insight: Atlético lost Copa final (18 Apr), played 120min+penalties,
+  physical and mental fatigue → UNDER model signal reinforced.
+  Cuadra Fernández average. Atlético away_expected=14.79 but fatigue
+  drives real rate lower than the statistical model captures.
+  copa_recent_extra_time flag captures the physical cost (delta_fouls -0.3 rule).

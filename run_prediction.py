@@ -13,6 +13,9 @@ Flags adicionales:
   --refresh-data      Fuerza recarga desde Supabase
   --output-json PATH  Guarda la prediccion en JSON
   --log-level         CRITICAL | ERROR | WARNING | INFO | DEBUG
+  --narrative PATH    Ruta a YAML de narrativa (overlay P1/P3/P4 para un partido)
+  --narratives DIR    Directorio de YAMLs de narrativa para modo batch
+  --overlay-log-dir   Directorio donde escribir los logs de overlay (default: overlay/logs)
 """
 
 from __future__ import annotations
@@ -43,8 +46,10 @@ sys.path.insert(
 # ---------------------------------------------------------------------------
 # Imports del proyecto
 # ---------------------------------------------------------------------------
-from generate import generate_features  # noqa: E402  (features_generator)
-from src.models.ensemble import FoulPredictionEnsemble  # noqa: E402  (prediction_models)
+from generate import generate_features  # noqa: E402
+
+from assembly import build_features  # noqa: E402
+from src.models.ensemble import FoulPredictionEnsemble  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +191,7 @@ def _validate_date(date_str: str) -> bool:
 
 
 def _fuzzy_match_team(name: str, canonical: list[str]) -> str | None:
-    from core.utils import fuzzy_name_search, TEAM_ALIASES
+    from core.utils import TEAM_ALIASES, fuzzy_name_search
 
     return fuzzy_name_search(name, canonical, TEAM_ALIASES) or None
 
@@ -252,13 +257,29 @@ def _validate_single(args: argparse.Namespace, state: dict[str, Any]) -> None:
 def _prediction_to_dict(
     ensemble: FoulPredictionEnsemble,
     feat: dict[str, Any],
+    narrative: Any | None = None,
+    catalog: list[Any] | None = None,
+    overlay_log_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Ejecuta la prediccion y devuelve un dict JSON-serializable."""
+    """Ejecuta la prediccion y devuelve un dict JSON-serializable.
+
+    If ``narrative`` is provided (and ``catalog`` is not None), applies the
+    overlay pipeline (P3 + P4) after ensemble.predict() and adds an ``overlay``
+    section to the output dict.  A JSON log is written to ``overlay_log_dir``
+    (default: overlay/logs/).  The prediction JSON (non-overlay fields) remains
+    byte-identical to the no-narrative case.
+    """
     pred = ensemble.predict(feat)
     team_pred = (
         ensemble.predict_team_fouls(feat, total_prediction=pred, reconcile=True) or {}
     )
-    return {
+
+    lines = [21.5, 23.5, 24.5, 25.5, 27.5, 29.5]
+    ou_table = pred.over_under
+    if team_pred.get("reconciled") and team_pred.get("total_pmf") is not None:
+        ou_table = team_pred["total_pmf"].over_under_table(lines)
+
+    result: dict[str, Any] = {
         "match": f"{feat['home_team']} vs {feat['away_team']}",
         "date": feat.get("date") or "",
         "jornada": feat.get("matchday") or 0,
@@ -275,6 +296,182 @@ def _prediction_to_dict(
             for k, v in (pred.over_under or {}).items()
         },
     }
+
+    # Overlay P3 + P4 (only when narrative is supplied)
+    if narrative is not None and catalog is not None:
+        result = _apply_overlay_post_prediction(
+            base_result=result,
+            pred_raw=pred,
+            team_pred=team_pred,
+            ou_table=ou_table,
+            narrative=narrative,
+            catalog=catalog,
+            overlay_log_dir=overlay_log_dir,
+        )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Overlay helpers (P3 + P4 post-prediction wiring)
+# ---------------------------------------------------------------------------
+
+
+def _apply_overlay_post_prediction(
+    base_result: dict[str, Any],
+    pred_raw: Any,
+    team_pred: dict[str, Any],
+    ou_table: dict,
+    narrative: Any,
+    catalog: list[Any],
+    overlay_log_dir: Path | None,
+) -> dict[str, Any]:
+    """Apply overlay P3 (PMF tilt) and P4 (kelly scale) after ensemble.predict().
+
+    Adds an 'overlay' key to the result dict with a summary of what was applied.
+    Writes a JSON log to overlay_log_dir (default: overlay/logs/).
+    NEVER modifies the core prediction fields (identity when no rules fire).
+    """
+    from datetime import datetime, timezone
+
+    from overlay.applier import apply_overlay
+    from overlay.log_writer import build_log_overlay_section, write_overlay_log
+
+    # Build a prediction dict for applier (needs pmf_total, expected_fouls, etc.)
+    prediction_for_overlay: dict[str, Any] = {
+        "pmf_total": pred_raw.pmf_total,
+        "expected_fouls": float(pred_raw.expected_fouls),
+        "home_expected": float(
+            team_pred.get("home_expected", pred_raw.expected_fouls * 0.55)
+        ),
+        "away_expected": float(
+            team_pred.get("away_expected", pred_raw.expected_fouls * 0.45)
+        ),
+        "over_under": ou_table,
+    }
+
+    overlay_result = apply_overlay(prediction_for_overlay, narrative, catalog)
+
+    # Build overlay summary for output JSON
+    overlay_summary: dict[str, Any] = {
+        "rules_fired": overlay_result.rules_fired,
+        "delta_fouls_applied": overlay_result.aggregated_effect.delta_fouls,
+        "variance_scale_applied": overlay_result.aggregated_effect.variance_scale,
+        "kelly_scale_applied": overlay_result.aggregated_effect.kelly_scale,
+        "pre_expected_fouls": overlay_result.pre_pmf_summary["mean"],
+        "post_expected_fouls": overlay_result.post_pmf_summary["mean"],
+        "suppressed_by_floor_count": overlay_result.suppressed_by_floor_count,
+    }
+
+    # Write overlay log
+    log_dir = overlay_log_dir or (ROOT / "overlay" / "logs")
+    # Best-effort narrative raw text (we only have the parsed object here)
+    narrative_raw = f"# auto-generated by run_prediction\nconfidence_level: {narrative.confidence_level}\n"
+
+    log_record: dict[str, Any] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "match": {
+            "home": narrative.match.home,
+            "away": narrative.match.away,
+            "date": narrative.match.date,
+        },
+        "narrative_raw": narrative_raw,
+        "parsed_flags": {
+            "confidence_level": narrative.confidence_level,
+            "special_flags": narrative.special_flags or [],
+            "objectives": {
+                side: {"label": oo.label, "urgency_base": oo.urgency_base}
+                for side, oo in (narrative.objectives or {}).items()
+            },
+            "stakes": (
+                {"home": narrative.stakes.home, "away": narrative.stakes.away}
+                if narrative.stakes
+                else None
+            ),
+            "rotations": narrative.rotations,
+            "intensity_override": narrative.intensity_override,
+            "physicality_bias": narrative.physicality_bias,
+            "referee_factor": narrative.referee_factor,
+        },
+        "pre_overlay": build_log_overlay_section(
+            {
+                "expected_fouls": overlay_result.pre_pmf_summary["mean"],
+                "pmf_summary": overlay_result.pre_pmf_summary,
+            }
+        ),
+        "rules_fired": overlay_result.rules_fired,
+        "post_overlay": build_log_overlay_section(
+            {
+                "expected_fouls": overlay_result.post_pmf_summary["mean"],
+                "pmf_summary": overlay_result.post_pmf_summary,
+            }
+        ),
+        "kelly_raw_vs_scaled": {
+            "kelly_raw": overlay_result.kelly_raw,
+            "kelly_scaled": overlay_result.kelly_scaled,
+        },
+        "actual_fouls": None,
+    }
+
+    try:
+        log_path = write_overlay_log(log_record, Path(log_dir))
+        overlay_summary["log"] = str(log_path)
+        logger.info(
+            f"Overlay: {len(overlay_result.rules_fired)} rules fired "
+            f"({overlay_result.aggregated_effect.delta_fouls:+.2f} fouls, "
+            f"var x{overlay_result.aggregated_effect.variance_scale:.2f}, "
+            f"kelly x{overlay_result.aggregated_effect.kelly_scale:.2f}), "
+            f"log: {log_path}"
+        )
+    except Exception as exc:
+        logger.warning(f"Could not write overlay log: {exc}")
+        overlay_summary["log"] = None
+
+    result = dict(base_result)
+    result["overlay"] = overlay_summary
+    return result
+
+
+def _find_narrative_for_match(
+    narratives_dir: Path,
+    home: str,
+    away: str,
+    date: str,
+) -> Path | None:
+    """Find a narrative YAML file for the given match in the narratives directory.
+
+    Tries two naming conventions in order:
+    1. Exact: {home}_vs_{away}_{date}.yaml  (with accents/spaces)
+    2. Slugified: {slug(home)}_vs_{slug(away)}_{date}.yaml  (lowercase, no accents/spaces)
+
+    Returns None if not found or directory doesn't exist.
+    """
+    import unicodedata
+    import re as _re
+
+    if not narratives_dir.is_dir():
+        return None
+
+    # Primary: exact match (works on case-insensitive filesystems like Windows)
+    candidate = narratives_dir / f"{home}_vs_{away}_{date}.yaml"
+    if candidate.is_file():
+        return candidate
+
+    # Fallback: slugified names (lowercase, strip accents, remove non-alphanumeric)
+    def _slugify(s: str) -> str:
+        s = unicodedata.normalize("NFKD", s)
+        s = "".join(c for c in s if not unicodedata.combining(c))
+        s = s.lower()
+        s = _re.sub(r"[^a-z0-9]+", "", s)
+        return s
+
+    slug_candidate = (
+        narratives_dir / f"{_slugify(home)}_vs_{_slugify(away)}_{date}.yaml"
+    )
+    if slug_candidate.is_file():
+        return slug_candidate
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +496,9 @@ def _run_batch(
             logger.error("El JSON de batch debe ser una lista de partidos.")
             sys.exit(1)
         matches = data
+    elif batch_path.suffix.lower() in (".yaml", ".yml"):
+        # New format: matches.yaml from parsers/matches_parser
+        matches = _parse_yaml_batch_file(batch_path)
     elif batch_path.suffix.lower() == ".csv":
         with open(batch_path, encoding="utf-8", newline="") as f:
             for row in csv.DictReader(f):
@@ -312,31 +512,266 @@ def _run_batch(
                     }
                 )
     else:
-        logger.error("Formato no soportado. Usa .json o .csv.")
+        logger.error("Formato no soportado. Usa .json, .yaml o .csv.")
         sys.exit(1)
+
+    # Load overlay catalog once if --narratives is provided
+    batch_catalog = None
+    narratives_dir: Path | None = None
+    if getattr(args, "narratives", None):
+        narratives_dir = Path(args.narratives)
+        try:
+            from overlay.rules import load_catalog as _load_catalog
+
+            batch_catalog = _load_catalog(ROOT / "overlay" / "rules.yaml")
+        except Exception as exc:
+            logger.warning(f"Could not load overlay rule catalog: {exc}")
+
+    overlay_log_dir = Path(
+        getattr(args, "overlay_log_dir", None) or (ROOT / "overlay" / "logs")
+    )
 
     results: list[dict[str, Any]] = []
     for idx, m in enumerate(matches, 1):
-        logger.info(f"[{idx}/{len(matches)}] {m.get('local')} vs {m.get('visitante')}")
+        home = m.get("local") or ""
+        away = m.get("visitante") or ""
+        fecha = m.get("fecha") or args.fecha
+        logger.info(f"[{idx}/{len(matches)}] {home} vs {away}")
         try:
             feat = generate_features(
-                equipo_local=m["local"],
-                equipo_visitante=m["visitante"],
+                equipo_local=home,
+                equipo_visitante=away,
                 jornada=m.get("jornada") or args.jornada,
-                fecha_partido=m.get("fecha") or args.fecha,
+                fecha_partido=fecha,
                 arbitro=m.get("arbitro") or args.arbitro,
                 features_profile=args.features_profile,
                 refresh_data=args.refresh_data,
             )
-            results.append(_prediction_to_dict(ensemble, feat))
+            # Look up per-match narrative in --narratives dir
+            narrative_for_match = None
+            if narratives_dir is not None and batch_catalog is not None:
+                narr_path = _find_narrative_for_match(
+                    narratives_dir=narratives_dir,
+                    home=home,
+                    away=away,
+                    date=str(fecha),
+                )
+                if narr_path is not None:
+                    try:
+                        from overlay.loader import load_narrative as _load_narr
+
+                        narrative_for_match = _load_narr(narr_path)
+                        logger.info(f"  Narrative found: {narr_path.name}")
+                    except Exception as exc:
+                        logger.warning(f"  Could not load narrative {narr_path}: {exc}")
+                else:
+                    logger.info(f"  No narrative found for {home} vs {away} on {fecha}")
+
+            results.append(
+                _prediction_to_dict(
+                    ensemble,
+                    feat,
+                    narrative=narrative_for_match,
+                    catalog=batch_catalog if narrative_for_match else None,
+                    overlay_log_dir=overlay_log_dir,
+                )
+            )
         except Exception as exc:
-            logger.error(f"  Error en {m.get('local')} vs {m.get('visitante')}: {exc}")
+            logger.error(f"  Error en {home} vs {away}: {exc}")
     return results
 
 
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
+
+
+def _apply_narrative_p1(state: dict[str, Any], narrative_path: str) -> dict[str, Any]:
+    """Load a narrative YAML and apply the P1 objective override to state.
+
+    Returns a new (deep-copied) state dict with patched objectives.
+    Exits with code 1 on any parse/validation error.
+    """
+    from overlay.loader import load_narrative
+    from overlay.objective import inject_objectives_into_state
+
+    try:
+        narr = load_narrative(narrative_path)
+    except FileNotFoundError as exc:
+        logger.error(f"Narrative file not found: {exc}")
+        sys.exit(1)
+    except (ValueError, Exception) as exc:
+        logger.error(f"Error loading narrative: {exc}")
+        sys.exit(1)
+
+    if narr.objectives is not None:
+        logger.info(
+            f"P1 overlay: applying objective override for "
+            f"{list(narr.objectives.keys())} side(s)."
+        )
+        return inject_objectives_into_state(state, narr)
+    return state
+
+
+def _generate_features_with_state(
+    equipo_local: str,
+    equipo_visitante: str,
+    state: dict[str, Any],
+    *,
+    jornada: int | None,
+    fecha_partido: str | None,
+    arbitro: str | None,
+    features_profile: str | None,
+) -> dict[str, Any]:
+    """Generate features using a pre-loaded (possibly patched) state dict.
+
+    Calls build_features directly (bypassing generate_features which re-fetches
+    state from Supabase), so that any P1 objective patches are applied.
+    """
+    return build_features(
+        state=state,
+        equipo_local_input=equipo_local,
+        equipo_visitante_input=equipo_visitante,
+        jornada=jornada,
+        arbitro_input=arbitro,
+        arbitraje_source=("manual" if arbitro else "not_available"),
+        fecha_partido_input=fecha_partido,
+        features_profile=features_profile,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Run-dir support (Batch 3 — predecir-jornada-v2)
+# ---------------------------------------------------------------------------
+
+
+def _seed_rng(seed: int) -> None:
+    """Seed all RNGs for deterministic behavior.
+
+    Belt-and-suspenders: models use .eval() + torch.no_grad() so no stochastic
+    ops are expected, but seeding ensures any future stochastic code paths
+    remain deterministic.
+    """
+    import random as _random
+
+    _random.seed(seed)
+    try:
+        import numpy as _np
+
+        _np.random.seed(seed)
+    except ImportError:
+        pass
+    try:
+        import torch as _torch
+
+        _torch.manual_seed(seed)
+    except ImportError:
+        pass
+
+
+def _resolve_run_dir_paths(args: argparse.Namespace) -> None:
+    """Resolve implicit paths from --run-dir.
+
+    When --run-dir is set, the following are inferred (unless explicitly set):
+      - args.overlay_log_dir = {run_dir}/prediction/overlay_logs
+      - args.output_json     = {run_dir}/prediction/prediction.json
+      - args.narratives      = {run_dir}/input/narratives
+
+    Also reads manifest.yaml and seeds the RNG with manifest.seed.
+
+    Raises FileNotFoundError if {run_dir}/manifest.yaml does not exist.
+    """
+    if not getattr(args, "run_dir", None):
+        return
+
+    run_dir = Path(args.run_dir)
+    manifest_path = run_dir / "manifest.yaml"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"manifest.yaml not found in run-dir: {manifest_path}. "
+            f"Did you forget to call runs.lifecycle.start_run()?"
+        )
+
+    # Read seed (avoid hard dependency on runs.manifest at module-load time)
+    import yaml as _yaml
+
+    manifest_data = _yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+    seed = int(manifest_data.get("seed", 42))
+    _seed_rng(seed)
+
+    # Set implicit paths only if not already provided
+    if not args.overlay_log_dir:
+        args.overlay_log_dir = str(run_dir / "prediction" / "overlay_logs")
+    if not args.output_json:
+        args.output_json = str(run_dir / "prediction" / "prediction.json")
+    if not args.narratives:
+        args.narratives = str(run_dir / "input" / "narratives")
+
+
+def _parse_yaml_batch_file(path: Path) -> list[dict[str, Any]]:
+    """Parse a matches.yaml file (from parsers/matches_parser) into batch matches.
+
+    Maps the matches.yaml schema (home/away/date/referee) to the legacy batch
+    format (local/visitante/fecha/arbitro).
+
+    Args:
+        path: Path to matches.yaml.
+
+    Returns:
+        List of match dicts in legacy batch format.
+    """
+    import yaml as _yaml
+
+    with open(path, encoding="utf-8") as f:
+        data = _yaml.safe_load(f) or {}
+
+    jornada = data.get("jornada")
+    raw_matches = data.get("matches", []) or []
+
+    result: list[dict[str, Any]] = []
+    for m in raw_matches:
+        result.append(
+            {
+                "local": m.get("home", ""),
+                "visitante": m.get("away", ""),
+                "fecha": m.get("date"),
+                "arbitro": m.get("referee"),
+                "jornada": int(jornada) if jornada is not None else None,
+            }
+        )
+    return result
+
+
+# ---------------------------------------------------------------------------
+
+
+def _run_validate_narrative(path_str: str) -> None:
+    """Validate a narrative YAML file and exit.
+
+    Exits 0 on success, 1 on any error (file not found, parse error,
+    schema violation). Never invokes the prediction pipeline.
+    """
+    from pathlib import Path as _Path
+
+    from overlay.loader import load_narrative
+    from overlay.schema import Narrative as _Narrative
+
+    path = _Path(path_str)
+    try:
+        narr: _Narrative = load_narrative(path)
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except (ValueError, Exception) as exc:
+        print(f"ERROR validating {path.name}: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    print(
+        f"OK — {path.name} is valid. "
+        f"Match: {narr.match.home} vs {narr.match.away} | "
+        f"confidence_level={narr.confidence_level}"
+    )
+    sys.exit(0)
 
 
 def main() -> None:
@@ -389,8 +824,66 @@ def main() -> None:
         choices=["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"],
         help="Nivel de logging",
     )
+    parser.add_argument(
+        "--validate-narrative",
+        dest="validate_narrative",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Valida un fichero YAML de narrativa sin ejecutar la prediccion. "
+            "Sale con 0 si es valido, con 1 si hay errores."
+        ),
+    )
+    parser.add_argument(
+        "--narrative",
+        dest="narrative",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Ruta a un fichero YAML de narrativa para aplicar el overlay P1 "
+            "(objectives antes de generar features) y P3/P4 post-prediccion."
+        ),
+    )
+    parser.add_argument(
+        "--narratives",
+        dest="narratives",
+        metavar="DIR",
+        default=None,
+        help=(
+            "Directorio con YAMLs de narrativa para modo batch. "
+            "Naming: {home}_vs_{away}_{date}.yaml. "
+            "Partidos sin YAML se predicen normalmente (sin overlay)."
+        ),
+    )
+    parser.add_argument(
+        "--overlay-log-dir",
+        dest="overlay_log_dir",
+        metavar="DIR",
+        default=None,
+        help="Directorio donde escribir los logs de overlay (default: overlay/logs).",
+    )
+    parser.add_argument(
+        "--run-dir",
+        dest="run_dir",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Run directory — routes all outputs into run folder structure "
+            "(predecir-jornada-v2). Implicitly sets --overlay-log-dir, "
+            "--output-json, --narratives. Reads seed from manifest.yaml."
+        ),
+    )
 
     args = parser.parse_args()
+
+    # Resolve --run-dir implicit paths (predecir-jornada-v2)
+    if getattr(args, "run_dir", None):
+        _resolve_run_dir_paths(args)
+
+    # --validate-narrative: parse + validate YAML only, exit before prediction
+    if args.validate_narrative is not None:
+        _run_validate_narrative(args.validate_narrative)
+        return  # unreachable — _run_validate_narrative always sys.exit()
 
     logging.basicConfig(
         level=getattr(logging, args.log_level),
@@ -439,14 +932,20 @@ def main() -> None:
             f"| J{args.jornada} | {args.fecha}"
         )
         try:
-            feat = generate_features(
+            # P1 objective override: if --narrative is supplied and has
+            # P1 objectives: if --narrative is supplied, patch state['objectives'] BEFORE feature gen.
+            feat_state = state
+            if args.narrative is not None:
+                feat_state = _apply_narrative_p1(state, args.narrative)
+
+            feat = _generate_features_with_state(
                 equipo_local=args.local,
                 equipo_visitante=args.visitante,
+                state=feat_state,
                 jornada=args.jornada,
                 fecha_partido=args.fecha,
                 arbitro=args.arbitro,
                 features_profile=args.features_profile,
-                refresh_data=args.refresh_data,
             )
         except Exception as exc:
             logger.error(f"Error generando features: {exc}")
@@ -455,14 +954,42 @@ def main() -> None:
         # Salida legible siempre
         _print_prediction(ensemble, feat)
 
-        # JSON opcional
-        if args.output_json:
+        # JSON opcional (with optional overlay P3/P4)
+        if args.output_json or args.narrative:
             try:
-                result = _prediction_to_dict(ensemble, feat)
-                Path(args.output_json).write_text(
-                    json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+                # Load overlay components if --narrative supplied
+                overlay_narrative = None
+                overlay_catalog = None
+                overlay_log_dir = (
+                    Path(args.overlay_log_dir)
+                    if args.overlay_log_dir
+                    else (ROOT / "overlay" / "logs")
                 )
-                logger.info(f"Prediccion guardada en {args.output_json}")
+
+                if args.narrative is not None:
+                    from overlay.loader import load_narrative as _load_narr
+                    from overlay.rules import load_catalog as _load_catalog
+
+                    try:
+                        overlay_narrative = _load_narr(args.narrative)
+                        overlay_catalog = _load_catalog(ROOT / "overlay" / "rules.yaml")
+                    except Exception as exc:
+                        logger.warning(f"Could not load overlay components: {exc}")
+
+                result = _prediction_to_dict(
+                    ensemble,
+                    feat,
+                    narrative=overlay_narrative,
+                    catalog=overlay_catalog,
+                    overlay_log_dir=overlay_log_dir,
+                )
+
+                if args.output_json:
+                    Path(args.output_json).write_text(
+                        json.dumps(result, indent=2, ensure_ascii=False),
+                        encoding="utf-8",
+                    )
+                    logger.info(f"Prediccion guardada en {args.output_json}")
             except Exception as exc:
                 logger.error(f"No se pudo escribir el JSON: {exc}")
                 sys.exit(1)
