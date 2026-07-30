@@ -15,8 +15,16 @@ _HWFP_ROOT: Path = Path(__file__).resolve().parents[2]
 # REQ-11 sanctioned exception: {path-relative-to-_HWFP_ROOT → allowed import prefixes}
 # WHY: training composition root wires FakeModelRegistry (serving/fakes) as shared fake
 #      infrastructure; design explicitly approves this single cross-layer coupling.
+#      Batch 5 extends this: container_production_training() wires the REAL
+#      FilesystemModelRegistry (design D3 — "registry" in the production wiring list)
+#      so trained candidates register into the same checkpoints tree the serving
+#      layer reads production models from. Narrowly scoped to that one module, not
+#      all of HWFP.serving.adapters.
 _CROSS_LAYER_ALLOWLIST: dict[str, set[str]] = {
-    "training/composition/container.py": {"HWFP.serving.fakes"},
+    "training/composition/container.py": {
+        "HWFP.serving.fakes",
+        "HWFP.serving.adapters.filesystem_model_registry",
+    },
 }
 
 
