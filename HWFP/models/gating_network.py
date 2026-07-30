@@ -18,7 +18,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from src.utils.distributions import FoulPMF, mixture_pmf, MAX_K
+from HWFP.models.utils.distributions import FoulPMF, mixture_pmf, MAX_K
 
 
 class GatingNetwork(nn.Module):

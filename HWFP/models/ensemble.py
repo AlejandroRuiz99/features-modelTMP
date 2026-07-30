@@ -19,16 +19,16 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from src.models.referee_gmm import RefereeProfiler
-from src.models.naive_bayes import NaiveBayesFoulPredictor
-from src.models.regression import (
+from HWFP.models.referee_gmm import RefereeProfiler
+from HWFP.models.naive_bayes import NaiveBayesFoulPredictor
+from HWFP.models.regression import (
     FoulRegressionPredictor,
     TeamFoulRegressor,
     HomeFoulRatioEstimator,
 )
-from src.models.anfis import ANFISFoulPredictor
-from src.models.gating_network import DynamicEnsembleWeighter
-from src.utils.distributions import FoulPMF, scale_pmf_variance, tilt_pmf_to_mean
+from HWFP.models.anfis import ANFISFoulPredictor
+from HWFP.models.gating_network import DynamicEnsembleWeighter
+from HWFP.models.utils.distributions import FoulPMF, scale_pmf_variance, tilt_pmf_to_mean
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ class FoulPredictionEnsemble:
         )
         self._is_fitted = False
 
-        from src.models.calibration import OUCalibrationLayer
+        from HWFP.models.calibration import OUCalibrationLayer
 
         self.calibration = OUCalibrationLayer()
 
@@ -402,7 +402,7 @@ class FoulPredictionEnsemble:
         """
         import numpy as np
 
-        from src.models.referee_gmm import RefereeProfile
+        from HWFP.models.referee_gmm import RefereeProfile
 
         for m in feature_dicts:
             ref_name = m.get("referee", "unknown")

@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from src.utils.distributions import FoulPMF
+    from HWFP.models.utils.distributions import FoulPMF
 
 logger = logging.getLogger(__name__)
 

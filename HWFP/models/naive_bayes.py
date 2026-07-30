@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from src.utils.distributions import FoulPMF, pmf_from_intervals
+from HWFP.models.utils.distributions import FoulPMF, pmf_from_intervals
 
 
 @dataclass
@@ -436,7 +436,7 @@ class NaiveBayesFoulPredictor:
                 floor and gives the original raw-posterior behaviour.
 
         Returns:
-            A :class:`~src.utils.distributions.FoulPMF` whose probabilities
+            A :class:`~HWFP.models.utils.distributions.FoulPMF` whose probabilities
             sum to 1.0 ± 1e-6.
         """
         interval_probs = self.predict_interval_probs(match)

@@ -25,7 +25,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from src.utils.distributions import FoulPMF, pmf_from_negbin, MAX_K
+from HWFP.models.utils.distributions import FoulPMF, pmf_from_negbin, MAX_K
 
 
 class GaussianMembershipFunction(nn.Module):

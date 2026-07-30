@@ -78,6 +78,28 @@ def _make_team_state(team_id: str) -> TeamState:
 
 
 # ---------------------------------------------------------------------------
+# HWFP.models.paths — package-relative checkpoint resolution (PR1)
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultCheckpointsDir:
+    def test_resolves_package_relative_path(self):
+        from pathlib import Path
+
+        import HWFP.models as models_pkg
+        from HWFP.models.paths import default_checkpoints_dir
+
+        expected = Path(models_pkg.__file__).resolve().parent / "checkpoints" / "ensemble"
+        assert default_checkpoints_dir() == expected
+
+    def test_does_not_reference_legacy_prediction_models_path(self):
+        from HWFP.models.paths import default_checkpoints_dir
+
+        result = str(default_checkpoints_dir())
+        assert "prediction_models" not in result
+
+
+# ---------------------------------------------------------------------------
 # FilesystemModelRegistry
 # ---------------------------------------------------------------------------
 

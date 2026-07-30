@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 from scipy.stats import nbinom, poisson
 
-from src.utils.distributions import FoulPMF, MAX_K
+from HWFP.models.utils.distributions import FoulPMF, MAX_K
 
 
 class NegBinRegressor(nn.Module):
