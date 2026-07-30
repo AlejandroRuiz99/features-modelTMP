@@ -28,6 +28,20 @@ class PyTorchFeatureBuilder:
     feature build. Set `skip_market_fetch=False` only after wiring
     `HWFP.features.assembly.betting_odds.set_market_data_source(...)` at
     composition time.
+
+    Default-fill contract: `build_features()` returns a raw dict of 78 keys,
+    not the 76 `CANONICAL_FEATURE_KEYS`. 5 canonical keys
+    (`referee_avg_fouls`, `referee_home_bias`, `referee_is_shrunk`,
+    `referee_team_committed_home`, `referee_team_committed_away`) are absent
+    from the raw output and are default-filled to `0.0` below via
+    `flat_dict.get(k, 0.0)`. 7 raw keys are string/metadata fields
+    (`home_team`, `away_team`, `date`, `season`, `referee`,
+    `intensidad_esperada`, `riesgo_disciplinario`) that carry no canonical
+    numeric feature and are silently dropped by the projection onto
+    `CANONICAL_FEATURE_KEYS`. This is byte-identical to legacy behavior, not
+    a regression — see `HWFP.core.domain.feature_keys` module docstring and
+    `tests/unit/test_feature_golden_vector.py::test_key_set_matches_canonical_feature_keys`
+    for the pinned, regression-guarded contract.
     """
 
     def __init__(

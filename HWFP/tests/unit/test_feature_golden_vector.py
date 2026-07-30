@@ -172,8 +172,10 @@ _GOLDEN_VECTOR: dict[str, float] = {
 }
 
 
-def _frozen_build_features(monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
-    """Run the pipeline with `date.today()` frozen; return the 76-key vector."""
+def _run_pipeline(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """Run the pipeline with `date.today()` frozen; return the RAW flat dict
+    exactly as `build_features()` emits it (no projection onto
+    CANONICAL_FEATURE_KEYS)."""
     import HWFP.features.transformation.iap as iap_mod
     import HWFP.features.transformation.xfouls as xfouls_mod
     import HWFP.features.transformation.xstyle as xstyle_mod
@@ -183,7 +185,7 @@ def _frozen_build_features(monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
     monkeypatch.setattr(xfouls_mod, "date", _FrozenDate)
 
     state = build_state(_PARTIDOS, objectives={}, calendar_rows=None)
-    flat = build_features(
+    return build_features(
         state=state,
         equipo_local_input="Real Madrid",
         equipo_visitante_input="Barcelona",
@@ -192,6 +194,13 @@ def _frozen_build_features(monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
         skip_market_fetch=True,
         fecha_partido_input="2026-01-18",
     )
+
+
+def _frozen_build_features(monkeypatch: pytest.MonkeyPatch) -> dict[str, float]:
+    """Run the pipeline and project onto the 76 CANONICAL_FEATURE_KEYS, exactly
+    like every real consumer (HWFP.serving.adapters.pytorch_feature_builder)
+    does at runtime: missing keys default to 0.0."""
+    flat = _run_pipeline(monkeypatch)
     return {k: float(flat.get(k, 0.0)) for k in CANONICAL_FEATURE_KEYS}
 
 
@@ -201,7 +210,65 @@ def test_pinned_golden_vector(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result == _GOLDEN_VECTOR
 
 
+# ---------------------------------------------------------------------------
+# Documented raw-output contract for the "Key-set drift" scenario.
+#
+# The RAW dict returned by build_features() is NOT identical to
+# CANONICAL_FEATURE_KEYS: it has 78 keys, not 76. This is a pre-existing,
+# byte-identical-to-legacy fact (the pinned golden vector above already
+# records the 5 defaulted keys as 0.0), not a regression introduced by this
+# migration:
+#
+#   - 5 canonical keys are ABSENT from the raw output and are default-filled
+#     to 0.0 by every consumer (pytorch_feature_builder's
+#     `flat_dict.get(k, 0.0)`, and `_frozen_build_features` above).
+#   - 7 raw keys are string/metadata fields (team names, dates, referee name,
+#     season, and two derived-text fields) that carry no canonical numeric
+#     feature and are dropped by every consumer (see
+#     HWFP.core.domain.feature_keys module docstring).
+#
+# Verified against the real pipeline: raw output = 78 keys =
+# (CANONICAL_FEATURE_KEYS - _DEFAULT_FILLED_KEYS) | _DROPPED_KEYS.
+# ---------------------------------------------------------------------------
+
+_DEFAULT_FILLED_KEYS: frozenset[str] = frozenset(
+    {
+        "referee_avg_fouls",
+        "referee_home_bias",
+        "referee_is_shrunk",
+        "referee_team_committed_home",
+        "referee_team_committed_away",
+    }
+)
+
+_DROPPED_KEYS: frozenset[str] = frozenset(
+    {
+        "home_team",
+        "away_team",
+        "date",
+        "season",
+        "referee",
+        "intensidad_esperada",
+        "riesgo_disciplinario",
+    }
+)
+
+_EXPECTED_RAW_KEYS: frozenset[str] = (
+    frozenset(CANONICAL_FEATURE_KEYS) - _DEFAULT_FILLED_KEYS
+) | _DROPPED_KEYS
+
+
 def test_key_set_matches_canonical_feature_keys(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Scenario 'Key-set drift': produced keys equal CANONICAL_FEATURE_KEYS, no added/missing."""
-    result = _frozen_build_features(monkeypatch)
-    assert set(result.keys()) == set(CANONICAL_FEATURE_KEYS)
+    """Scenario 'Key-set drift': the pipeline's RAW output keys must exactly
+    match the documented raw/fill/drop contract, not the previous (vacuous)
+    projection over CANONICAL_FEATURE_KEYS.
+
+    Any future drift -- a key added, removed, or moved between the
+    default-filled and dropped sets -- fails here, because it silently
+    changes what pytorch_feature_builder defaults to 0.0 or drops.
+    """
+    raw_keys = set(_run_pipeline(monkeypatch).keys())
+
+    assert raw_keys == _EXPECTED_RAW_KEYS
+    assert (set(CANONICAL_FEATURE_KEYS) - raw_keys) == _DEFAULT_FILLED_KEYS
+    assert (raw_keys - set(CANONICAL_FEATURE_KEYS)) == _DROPPED_KEYS

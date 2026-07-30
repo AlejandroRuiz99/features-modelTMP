@@ -66,6 +66,13 @@ class FilesystemModelRegistry:
             (self._checkpoints_dir / f).exists() for f in _REQUIRED_FILES
         )
 
+    def _missing_required_files(self) -> Tuple[str, ...]:
+        if not self._checkpoints_dir.exists():
+            return _REQUIRED_FILES
+        return tuple(
+            f for f in _REQUIRED_FILES if not (self._checkpoints_dir / f).exists()
+        )
+
     def _ensure_ensemble(self):
         if self._ensemble is None:
             from HWFP.models.ensemble import FoulPredictionEnsemble
@@ -76,9 +83,11 @@ class FilesystemModelRegistry:
         return self._ensemble
 
     def load_production(self):
-        if not self._checkpoints_complete():
+        missing = self._missing_required_files()
+        if missing:
             raise NoProductionModelError(
-                f"No complete ensemble checkpoint found at: {self._checkpoints_dir}"
+                f"No complete ensemble checkpoint found at: {self._checkpoints_dir} "
+                f"(missing: {', '.join(missing)})"
             )
         from HWFP.serving.adapters.pytorch_foul_model import PyTorchFoulModel
 

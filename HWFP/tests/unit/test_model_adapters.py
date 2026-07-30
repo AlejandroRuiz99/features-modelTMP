@@ -178,6 +178,44 @@ class TestFilesystemModelRegistry:
         with pytest.raises(NoProductionModelError):
             registry.load_production()
 
+    def test_load_production_error_names_the_missing_checkpoint_file(self, tmp_path):
+        """Scenario 'Missing checkpoint artifact': the raised error names
+        WHICH `_REQUIRED_FILES` entry is missing, not just the directory.
+        Only `bayes.npz` is absent here; the other 3 required files exist.
+        """
+        from HWFP.serving.adapters.filesystem_model_registry import (
+            FilesystemModelRegistry,
+        )
+        from HWFP.core.domain.exceptions import NoProductionModelError
+
+        checkpoints = tmp_path / "ensemble"
+        checkpoints.mkdir()
+        for name in _REQUIRED_CHECKPOINT_FILES:
+            if name != "bayes.npz":
+                (checkpoints / name).write_bytes(b"fake")
+
+        registry = FilesystemModelRegistry(checkpoints_dir=checkpoints)
+        with pytest.raises(NoProductionModelError) as excinfo:
+            registry.load_production()
+
+        assert "bayes.npz" in str(excinfo.value)
+        for present_name in ("gating.pt", "anfis.pt", "regression.pt"):
+            assert present_name not in str(excinfo.value)
+
+    def test_load_production_error_names_all_missing_checkpoint_files(self, tmp_path):
+        """Empty dir: the error names every one of the 4 `_REQUIRED_FILES`."""
+        from HWFP.serving.adapters.filesystem_model_registry import (
+            FilesystemModelRegistry,
+        )
+        from HWFP.core.domain.exceptions import NoProductionModelError
+
+        registry = FilesystemModelRegistry(checkpoints_dir=tmp_path)
+        with pytest.raises(NoProductionModelError) as excinfo:
+            registry.load_production()
+
+        for name in _REQUIRED_CHECKPOINT_FILES:
+            assert name in str(excinfo.value)
+
     def test_register_writes_candidate_blob_and_manifest_without_touching_production(
         self, tmp_path
     ):
