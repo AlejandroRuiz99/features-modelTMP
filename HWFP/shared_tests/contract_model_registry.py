@@ -65,10 +65,3 @@ def test_promote_worse_candidate_raises(model_registry):
 
     with pytest.raises(PromotionError):
         model_registry.promote(bad.model_id)
-
-
-def test_model_registry_stub_raises_not_implemented():
-    mod = pytest.importorskip("HWFP.serving.adapters.filesystem_model_registry")
-    adapter = mod.FilesystemModelRegistry()
-    with pytest.raises(NotImplementedError):
-        adapter.load_production()

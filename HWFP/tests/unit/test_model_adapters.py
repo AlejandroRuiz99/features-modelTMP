@@ -20,6 +20,7 @@ from HWFP.core.domain.team_state import TeamState
 from HWFP.serving.adapters._feature_keys import CANONICAL_FEATURE_KEYS
 
 _N = len(CANONICAL_FEATURE_KEYS)
+_REQUIRED_CHECKPOINT_FILES = ("gating.pt", "anfis.pt", "regression.pt", "bayes.npz")
 
 
 # ---------------------------------------------------------------------------
@@ -124,13 +125,12 @@ class TestFilesystemModelRegistry:
         assert len(result) == 0
 
     def test_list_manifests_with_checkpoints_returns_one_manifest(self):
-        from pathlib import Path
-
+        from HWFP.models.paths import default_checkpoints_dir
         from HWFP.serving.adapters.filesystem_model_registry import (
             FilesystemModelRegistry,
         )
 
-        checkpoints = Path(__file__).parents[3] / "prediction_models" / "checkpoints" / "ensemble"
+        checkpoints = default_checkpoints_dir()
         if not checkpoints.exists():
             pytest.skip("Real checkpoints not available")
 
@@ -139,6 +139,34 @@ class TestFilesystemModelRegistry:
         assert len(manifests) == 1
         from HWFP.core.domain.model_status import ModelStatus
         assert manifests[0].status == ModelStatus.PRODUCTION
+
+    def test_load_production_imports_from_hwfp_models_not_dead_src_path(
+        self, tmp_path, monkeypatch
+    ):
+        """RED (task 3.2): load_production() must not import the dead
+        `src.models.ensemble` path — it must import `HWFP.models.ensemble`
+        directly. `FoulPredictionEnsemble.load()` itself is monkeypatched
+        to a no-op: verifying real checkpoint weight-loading is out of
+        scope for this adapter-rewiring batch (see Issues Found in
+        apply-progress for the pre-existing hidden_dims config drift
+        this surfaced).
+        """
+        from HWFP.models.ensemble import FoulPredictionEnsemble
+        from HWFP.serving.adapters.filesystem_model_registry import (
+            FilesystemModelRegistry,
+        )
+        from HWFP.serving.adapters.pytorch_foul_model import PyTorchFoulModel
+
+        monkeypatch.setattr(FoulPredictionEnsemble, "load", lambda self, d: None)
+
+        checkpoints = tmp_path / "ensemble"
+        checkpoints.mkdir()
+        for name in _REQUIRED_CHECKPOINT_FILES:
+            (checkpoints / name).write_bytes(b"fake")
+
+        registry = FilesystemModelRegistry(checkpoints_dir=checkpoints)
+        model = registry.load_production()
+        assert isinstance(model, PyTorchFoulModel)
 
     def test_load_production_raises_on_missing_checkpoints(self, tmp_path):
         from HWFP.serving.adapters.filesystem_model_registry import (
@@ -149,6 +177,61 @@ class TestFilesystemModelRegistry:
         registry = FilesystemModelRegistry(checkpoints_dir=tmp_path)
         with pytest.raises(NoProductionModelError):
             registry.load_production()
+
+    def test_register_writes_candidate_blob_and_manifest_without_touching_production(
+        self, tmp_path
+    ):
+        """RED (task 3.2): register() must unzip the blob into
+        {checkpoints_root}/candidates/{model_id}/ and write manifest.json,
+        never touching the production checkpoints dir.
+        """
+        import io
+        import json
+        import zipfile
+
+        from HWFP.core.domain.model_id import ModelId
+        from HWFP.core.domain.model_manifest import HoldoutMetrics, ModelManifest
+        from HWFP.core.domain.model_status import ModelStatus
+        from HWFP.serving.adapters.filesystem_model_registry import (
+            FilesystemModelRegistry,
+        )
+
+        production_dir = tmp_path / "ensemble"
+        production_dir.mkdir()
+        (production_dir / "gating.pt").write_bytes(b"prod-gating")
+
+        registry = FilesystemModelRegistry(checkpoints_dir=production_dir)
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("gating.pt", b"candidate-gating-bytes")
+        blob = buf.getvalue()
+
+        manifest = ModelManifest(
+            model_id=ModelId("candidate-001"),
+            trained_at=datetime(2026, 1, 1),
+            git_sha="abc123",
+            dataset_hash="hash-001",
+            dataset_rows=100,
+            metrics_holdout=HoldoutMetrics(nll=1.0, brier=0.1, calibration_ece=0.01),
+            gates_passed=(),
+            status=ModelStatus.CANDIDATE,
+        )
+
+        registry.register(manifest, blob)
+
+        candidate_dir = production_dir.parent / "candidates" / "candidate-001"
+        assert (candidate_dir / "gating.pt").read_bytes() == b"candidate-gating-bytes"
+
+        manifest_path = candidate_dir / "manifest.json"
+        assert manifest_path.exists()
+        data = json.loads(manifest_path.read_text())
+        assert data["model_id"] == "candidate-001"
+        assert data["git_sha"] == "abc123"
+        assert data["metrics_holdout"]["nll"] == 1.0
+
+        # Production checkpoint must remain untouched.
+        assert (production_dir / "gating.pt").read_bytes() == b"prod-gating"
 
 
 # ---------------------------------------------------------------------------

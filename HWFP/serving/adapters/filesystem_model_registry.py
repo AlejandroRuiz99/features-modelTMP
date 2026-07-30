@@ -8,7 +8,6 @@ promote, and archive raise NotImplementedError.
 from __future__ import annotations
 
 import json
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple
@@ -18,14 +17,7 @@ from HWFP.core.domain.model_id import ModelId
 from HWFP.core.domain.model_manifest import HoldoutMetrics, ModelManifest
 from HWFP.core.domain.model_status import ModelStatus
 
-_REPO_ROOT = Path(__file__).parents[3]
 _REQUIRED_FILES = ("gating.pt", "anfis.pt", "regression.pt", "bayes.npz")
-
-
-def _ensure_prediction_models_path() -> None:
-    p = str(_REPO_ROOT / "prediction_models")
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 
 def _build_manifest(checkpoints_dir: Path) -> ModelManifest:
@@ -76,8 +68,7 @@ class FilesystemModelRegistry:
 
     def _ensure_ensemble(self):
         if self._ensemble is None:
-            _ensure_prediction_models_path()
-            from src.models.ensemble import FoulPredictionEnsemble
+            from HWFP.models.ensemble import FoulPredictionEnsemble
 
             ensemble = FoulPredictionEnsemble()
             ensemble.load(self._checkpoints_dir)
@@ -99,7 +90,42 @@ class FilesystemModelRegistry:
         return (_build_manifest(self._checkpoints_dir),)
 
     def register(self, manifest: ModelManifest, model_blob: bytes) -> None:
-        raise NotImplementedError("FilesystemModelRegistry is read-only")
+        """Unzip a trained candidate checkpoint into the candidates area.
+
+        Writes to ``{checkpoints_root}/candidates/{model_id}/`` alongside a
+        ``manifest.json`` describing training metadata. Never writes to or
+        overwrites the production checkpoints directory (``promote()``
+        handles that transition and is out of scope here).
+        """
+        import io
+        import zipfile
+
+        checkpoints_root = self._checkpoints_dir.parent
+        target_dir = checkpoints_root / "candidates" / manifest.model_id.value
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(io.BytesIO(model_blob)) as zf:
+            zf.extractall(target_dir)
+
+        manifest_path = target_dir / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "model_id": manifest.model_id.value,
+                    "trained_at": manifest.trained_at.isoformat(),
+                    "git_sha": manifest.git_sha,
+                    "dataset_hash": manifest.dataset_hash,
+                    "dataset_rows": manifest.dataset_rows,
+                    "metrics_holdout": {
+                        "nll": manifest.metrics_holdout.nll,
+                        "brier": manifest.metrics_holdout.brier,
+                        "calibration_ece": manifest.metrics_holdout.calibration_ece,
+                    },
+                    "gates_passed": list(manifest.gates_passed),
+                    "status": manifest.status.value,
+                }
+            )
+        )
 
     def promote(self, model_id: ModelId) -> None:
         raise NotImplementedError("FilesystemModelRegistry is read-only")

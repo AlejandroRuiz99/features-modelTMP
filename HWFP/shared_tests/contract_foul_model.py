@@ -36,10 +36,3 @@ def test_predict_all_probs_non_negative(foul_model):
 def test_predict_bin_edges_len_is_pmf_plus_one(foul_model):
     result = foul_model.predict(_FEATURES)
     assert len(result.bin_edges) == len(result.pmf) + 1
-
-
-def test_foul_model_stub_raises_not_implemented():
-    mod = pytest.importorskip("HWFP.serving.adapters.pytorch_foul_model")
-    adapter = mod.PyTorchFoulModel()
-    with pytest.raises(NotImplementedError):
-        adapter.predict(_FEATURES)

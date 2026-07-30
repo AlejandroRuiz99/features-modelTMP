@@ -60,10 +60,3 @@ def test_build_produces_non_empty_vector(feature_builder):
         _match(), _team_state("T_HOME"), _team_state("T_AWAY")
     )
     assert len(result) > 0
-
-
-def test_feature_builder_stub_raises_not_implemented():
-    mod = pytest.importorskip("HWFP.serving.adapters.pytorch_feature_builder")
-    adapter = mod.PyTorchFeatureBuilder()
-    with pytest.raises(NotImplementedError):
-        adapter.build(_match(), _team_state("T_HOME"), _team_state("T_AWAY"))
