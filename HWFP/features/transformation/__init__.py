@@ -16,9 +16,9 @@ Modulos de calculo estadistico puro (sin I/O):
   knowledge_pack   — orquestador: ensambla el knowledge pack completo
 """
 
-from transformation.iap import buscar_equipo, calcular_scores
-from transformation.referees import buscar_arbitro, calcular_perfiles as calcular_perfiles_arbitros
-from transformation.xfouls import calcular_xfouls
-from transformation.xstyle import calcular_xstyle
-from transformation.knowledge_pack import ensamblar_knowledge_pack
-from transformation.market import ajustar_knowledge_pack
+from HWFP.features.transformation.iap import buscar_equipo, calcular_scores
+from HWFP.features.transformation.referees import buscar_arbitro, calcular_perfiles as calcular_perfiles_arbitros
+from HWFP.features.transformation.xfouls import calcular_xfouls
+from HWFP.features.transformation.xstyle import calcular_xstyle
+from HWFP.features.transformation.knowledge_pack import ensamblar_knowledge_pack
+from HWFP.features.transformation.market import ajustar_knowledge_pack

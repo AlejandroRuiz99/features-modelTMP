@@ -5,8 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from selection.odds_client import get_match_odds_rows
-from core.utils import (
+from HWFP.features.core.utils import (
     dedupe_dicts,
     extract_ou,
     no_vig,
@@ -277,6 +276,15 @@ def build_market_category(
     Returns:
         (market_category, market_input_model, mercados_usados, scraped_at)
     """
+    # Deferred import: `selection` is a legacy top-level package outside the
+    # HWFP.features leaf (not moved per design D2) and is only reachable when
+    # `features_generator` is explicitly on sys.path (e.g. via pytest's
+    # `pythonpath` config). Importing it lazily here means HWFP.features stays
+    # fully importable (and skip_market_fetch=True callers fully functional)
+    # without that legacy path -- real market-fetch wiring is deferred to a
+    # later batch's composition root.
+    from selection.odds_client import get_match_odds_rows
+
     rows, scraped_at, event_id = get_match_odds_rows(
         scores, eq_local, eq_visit, match_date=match_date
     )

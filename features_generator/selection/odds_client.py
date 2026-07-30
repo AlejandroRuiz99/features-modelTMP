@@ -6,8 +6,8 @@ from collections import defaultdict
 from typing import Any
 
 from selection import supabase_client
-from transformation import buscar_equipo
-from core.utils import team_match
+from HWFP.features.transformation import buscar_equipo
+from HWFP.features.core.utils import team_match
 
 
 def get_match_odds_rows(

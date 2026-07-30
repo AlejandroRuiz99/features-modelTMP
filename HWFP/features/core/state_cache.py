@@ -1,23 +1,34 @@
 """Estado estadistico precalculado (singleton thread-safe).
 
-build_state()  — computa scores, rankings, xstyles, arbitros, GMM, calendario
-                 y objectives a partir de una lista de partidos (puro, sin I/O).
-get_state()    — devuelve el estado cacheado; carga de Supabase la primera vez.
+build_state()      — computa scores, rankings, xstyles, arbitros, GMM,
+                      calendario y objectives a partir de una lista de
+                      partidos (puro, sin I/O).
+set_data_source()  — inyecta el callable que produce la lista de partidos
+                      (composition root real, o un stub en tests).
+get_state()        — devuelve el estado cacheado (zero-arg — design D1's
+                      state_provider_fn contract); carga via el data source
+                      inyectado la primera vez (o si refresh=True).
+
+D1 (architecture-boundaries, REQ-12): esta capa leaf no debe depender de
+`selection` (adaptador legacy de Supabase). La resolucion del data source
+REAL (Supabase u otro) es responsabilidad de la composition root (ver
+HWFP/cli/bot_main.py), no de este modulo.
 """
 
 from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime
 from threading import Lock
 
 logger = logging.getLogger(__name__)
 
-from transformation import calcular_scores, calcular_xstyle
-from transformation.referees import calcular_perfiles as calcular_perfiles_arbitros
-from transformation.referee_gmm import calcular_perfiles_gmm
-from core.utils import (
+from HWFP.features.transformation import calcular_scores, calcular_xstyle
+from HWFP.features.transformation.referees import calcular_perfiles as calcular_perfiles_arbitros
+from HWFP.features.transformation.referee_gmm import calcular_perfiles_gmm
+from HWFP.features.core.utils import (
     classify_competition,
     parse_date_safe,
     fuzzy_name_search,
@@ -104,42 +115,56 @@ def build_state(
 
 
 # ---------------------------------------------------------------------------
-# Singleton cache (para predicciones en vivo via generate.py)
+# Singleton cache with an injectable data source (composition-root DI point)
 # ---------------------------------------------------------------------------
+
+DataSourceFn = Callable[[], list[dict]]
 
 _lock = Lock()
 _cached: dict | None = None
+_data_source: DataSourceFn | None = None
 
 
-def _load_from_supabase() -> dict:
-    from selection import supabase_client
+def set_data_source(fn: DataSourceFn) -> None:
+    """Injects the callable that produces the raw `partidos` list.
 
-    partidos = supabase_client.fetch_all_matches()
-    if not partidos:
-        raise RuntimeError("No hay partidos disponibles en Supabase.")
+    The composition root wires the real adapter here (e.g. a Supabase-backed
+    fetcher); tests wire a stub. This keeps the leaf `HWFP.features` package
+    free of any dependency on a concrete data-fetching implementation
+    (REQ-12/14, architecture-boundaries).
+    """
+    global _data_source
+    _data_source = fn
 
-    # D17: objectives are now injected per-match via overlay (narrative YAML).
-    # No longer fetched from Supabase.
-    objectives = {}
 
-    try:
-        calendar_rows = supabase_client.fetch_liga_calendar()
-    except Exception:
-        logger.warning(
-            "No se pudo cargar el calendario de liga; se omite cal_index.",
-            exc_info=True,
+def _load_state() -> dict:
+    if _data_source is None:
+        raise RuntimeError(
+            "No data source configured for HWFP.features.core.state_cache. "
+            "Call set_data_source(fn) from the composition root before "
+            "get_state() is invoked."
         )
-        calendar_rows = None
+    partidos = _data_source()
+    if not partidos:
+        raise RuntimeError("El data source configurado no devolvio partidos.")
 
-    return build_state(partidos, objectives=objectives, calendar_rows=calendar_rows)
+    # D17: objectives are injected per-match via overlay (narrative YAML),
+    # not fetched here. Calendar rows (multi-competition fatigue) are an
+    # optional enrichment the composition root's data source may bundle in
+    # the future; this leaf module does not fetch them itself.
+    return build_state(partidos, objectives={}, calendar_rows=None)
 
 
 def get_state(*, refresh: bool = False) -> dict:
-    """Devuelve el estado cacheado. Carga de Supabase la primera vez o si refresh=True."""
+    """Returns the cached state (zero-arg call — design D1's state_provider_fn contract).
+
+    Loads via the injected data source the first time, or whenever
+    refresh=True. Call set_data_source() before the first invocation.
+    """
     import copy
 
     global _cached
     with _lock:
         if _cached is None or refresh:
-            _cached = _load_from_supabase()
+            _cached = _load_state()
         return copy.deepcopy(_cached)

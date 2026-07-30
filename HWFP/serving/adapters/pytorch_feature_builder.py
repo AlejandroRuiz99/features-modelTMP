@@ -2,37 +2,27 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any, Callable
 
 from HWFP.core.domain.feature_vector import FeatureVector
 from HWFP.core.domain.match import Match
 from HWFP.core.domain.team_state import TeamState
+from HWFP.features.assembly.feature_assembler import build_features
 from HWFP.serving.adapters._feature_keys import CANONICAL_FEATURE_KEYS
-
-_REPO_ROOT = Path(__file__).parents[3]
-
-
-def _ensure_legacy_paths() -> None:
-    p = str(_REPO_ROOT / "features_generator")
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 
 class PyTorchFeatureBuilder:
-    """Bridges domain objects → legacy build_features() → FeatureVector.
+    """Bridges domain objects → HWFP.features.build_features() → FeatureVector.
 
     The state_provider_fn must return the full state dict consumed by the
-    legacy pipeline (keys: partidos, xstyles, scores, ref_perfiles, ...).
-    This callable is invoked on every build() call to ensure freshness.
+    absorbed feature pipeline (keys: partidos, xstyles, scores, ref_perfiles,
+    ...). This callable is invoked on every build() call to ensure freshness
+    (design D1: composition injects a zero-arg state_provider_fn backed by
+    HWFP.features.core.state_cache.get_state).
     """
 
     def __init__(self, state_provider_fn: Callable[[], dict[str, Any]]) -> None:
         self._state_provider_fn = state_provider_fn
-        _ensure_legacy_paths()
-        from assembly.feature_assembler import build_features
-
         self._build_features = build_features
 
     def build(

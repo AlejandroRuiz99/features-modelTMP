@@ -20,7 +20,7 @@ import math
 from datetime import datetime
 from typing import Any
 
-from core.utils import norm_text, parse_date_safe
+from HWFP.features.core.utils import norm_text, parse_date_safe
 
 
 # ---------------------------------------------------------------------------

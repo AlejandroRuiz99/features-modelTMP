@@ -14,9 +14,9 @@ from __future__ import annotations
 from datetime import date
 
 
-from core.config import ALPHA_CARD_PRESSURE, DECAY_LAMBDA
-from core.helpers import decay_weight, parse_date, safe
-from transformation.referees import calcular_perfiles
+from HWFP.features.core.config import ALPHA_CARD_PRESSURE, DECAY_LAMBDA
+from HWFP.features.core.helpers import decay_weight, parse_date, safe
+from HWFP.features.transformation.referees import calcular_perfiles
 
 _RATIO_AMARILLAS_FALTA_FALLBACK = 2.3 / 12.6  # usado solo si no hay datos
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.config import (
+from HWFP.features.core.config import (
     FISICO_MUY_ALTO,
     FISICO_ALTO,
     FISICO_NORMAL,
@@ -10,7 +10,7 @@ from core.config import (
     OFENSIVO_ABIERTO,
     OFENSIVO_EQUILIBRADO,
 )
-from core.helpers import safe
+from HWFP.features.core.helpers import safe
 
 _FISICO_STYLES = {"FÍSICO-DEFENSIVO", "INTENSO", "DIRECTO-FÍSICO"}
 _TECH_STYLES   = {"TÉCNICO-OFENSIVO", "POSESIÓN"}

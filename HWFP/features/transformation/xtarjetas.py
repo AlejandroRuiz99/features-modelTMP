@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 
-from core.config import (
+from HWFP.features.core.config import (
     AGG_VOL_PESO_FALTAS,
     AGG_VOL_PESO_AMARILLAS,
     AGG_VOL_PESO_ROJAS,
 )
-from core.helpers import safe
+from HWFP.features.core.helpers import safe
 
 
 def calcular_xtarjetas(

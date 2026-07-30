@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import math
 
-from core.config import HOME_GOALS_FACTOR
-from core.helpers import safe
+from HWFP.features.core.config import HOME_GOALS_FACTOR
+from HWFP.features.core.helpers import safe
 
 AWAY_GOALS_FACTOR = round(2.0 - HOME_GOALS_FACTOR, 4)
 

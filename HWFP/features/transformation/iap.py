@@ -11,9 +11,9 @@ from __future__ import annotations
 from datetime import date
 
 
-from core.config import DECAY_LAMBDA, PESO_AMARILLAS, PESO_FALTAS, PESO_ROJAS
-from core.helpers import decay_weight, parse_date
-from core.utils import TEAM_ALIASES, fuzzy_name_search
+from HWFP.features.core.config import DECAY_LAMBDA, PESO_AMARILLAS, PESO_FALTAS, PESO_ROJAS
+from HWFP.features.core.helpers import decay_weight, parse_date
+from HWFP.features.core.utils import TEAM_ALIASES, fuzzy_name_search
 
 
 def _iap_raw(fouls: int, yellows: int, reds: int) -> float:

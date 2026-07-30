@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 
-from core.config import SEASONS
+from HWFP.features.core.config import SEASONS
 from selection import supabase_client, csv_source
 
 logger = logging.getLogger(__name__)

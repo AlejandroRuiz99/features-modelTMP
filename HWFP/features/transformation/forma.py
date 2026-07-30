@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 
-from core.config import FORMA_VENTANA, JORNADAS_LALIGA
-from core.helpers import safe
+from HWFP.features.core.config import FORMA_VENTANA, JORNADAS_LALIGA
+from HWFP.features.core.helpers import safe
 
 _PTS = {"W": 3, "D": 1, "L": 0}
 

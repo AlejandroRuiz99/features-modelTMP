@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 
 
-from core.config import MARKET_ALIGNMENT_THRESHOLD
+from HWFP.features.core.config import MARKET_ALIGNMENT_THRESHOLD
 
 _ALIGNMENT_TIERS: list[tuple[float, str]] = [
     (0.80, "Alta alineación modelo-mercado — expectativas consistentes"),

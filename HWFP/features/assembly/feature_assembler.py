@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from transformation import (
+from HWFP.features.transformation import (
     ajustar_knowledge_pack,
     buscar_arbitro,
     buscar_equipo,
@@ -26,14 +26,14 @@ from transformation import (
     calcular_xfouls,
     ensamblar_knowledge_pack,
 )
-from transformation.referee_gmm import calcular_perfiles_gmm, get_perfil_gmm_o_default
-from transformation.competitive_context import build_context_payload
-from transformation.match_labels import build_labels_category
-from assembly.betting_odds import build_market_category
-from assembly.completeness import build_quality_category
-from assembly.feature_registry import FeatureRegistry
-from core.utils import no_vig, no_vig_3, market_entropy
-from core.config import DERBIES as _DERBIES
+from HWFP.features.transformation.referee_gmm import calcular_perfiles_gmm, get_perfil_gmm_o_default
+from HWFP.features.transformation.competitive_context import build_context_payload
+from HWFP.features.transformation.match_labels import build_labels_category
+from HWFP.features.assembly.betting_odds import build_market_category
+from HWFP.features.assembly.completeness import build_quality_category
+from HWFP.features.assembly.feature_registry import FeatureRegistry
+from HWFP.features.core.utils import no_vig, no_vig_3, market_entropy
+from HWFP.features.core.config import DERBIES as _DERBIES
 
 _AGG_SCALE_TEAM = 15.0
 _AGG_SCALE_TOTAL = 30.0

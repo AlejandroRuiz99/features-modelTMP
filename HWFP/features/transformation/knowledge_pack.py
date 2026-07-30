@@ -7,12 +7,12 @@ competitive_context.py; este modulo no recomputa ni infiere nada de el.
 from __future__ import annotations
 
 
-from core.helpers import clip
-from transformation.xgoals import calcular_xgoals, poisson_outcome_probs
-from transformation.xposesion import calcular_xposesion
-from transformation.xtarjetas import calcular_xtarjetas, calcular_agresividad_volumen
-from transformation.forma import calcular_forma_reciente, calcular_contexto_temporada
-from transformation.match_profile import (
+from HWFP.features.core.helpers import clip
+from HWFP.features.transformation.xgoals import calcular_xgoals, poisson_outcome_probs
+from HWFP.features.transformation.xposesion import calcular_xposesion
+from HWFP.features.transformation.xtarjetas import calcular_xtarjetas, calcular_agresividad_volumen
+from HWFP.features.transformation.forma import calcular_forma_reciente, calcular_contexto_temporada
+from HWFP.features.transformation.match_profile import (
     calcular_compatibilidad_estilos,
     calcular_xvolumen_eventos,
     generar_narrative,

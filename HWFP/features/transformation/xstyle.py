@@ -7,8 +7,8 @@ Dimensiones: posesión, tiros, precisión, corners, goles, eficiencia,
 from __future__ import annotations
 
 from datetime import date
-from core.config import DECAY_LAMBDA
-from core.helpers import decay_weight, parse_date, safe
+from HWFP.features.core.config import DECAY_LAMBDA
+from HWFP.features.core.helpers import decay_weight, parse_date, safe
 
 
 # ---------------------------------------------------------------------------

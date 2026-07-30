@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.helpers import clip, safe
+from HWFP.features.core.helpers import clip, safe
 
 
 def calcular_xposesion(xstyles: dict, equipo_local: str, equipo_visitante: str) -> dict:

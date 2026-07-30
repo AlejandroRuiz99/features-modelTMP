@@ -29,7 +29,7 @@ import logging
 import numpy as np
 from sklearn.mixture import GaussianMixture
 
-from core.helpers import parse_date, safe
+from HWFP.features.core.helpers import parse_date, safe
 
 logger = logging.getLogger(__name__)
 

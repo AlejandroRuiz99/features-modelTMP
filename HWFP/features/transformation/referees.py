@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from core.helpers import safe
-from core.utils import fuzzy_name_search
+from HWFP.features.core.helpers import safe
+from HWFP.features.core.utils import fuzzy_name_search
 
 # Umbral de faltas/partido por equipo para clasificar como equipo "limpio".
 # Equipos con promedio histórico < CLEAN_THR son equipos que cometen pocas faltas
