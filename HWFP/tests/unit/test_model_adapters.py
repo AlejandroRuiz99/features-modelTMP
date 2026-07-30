@@ -233,6 +233,98 @@ class TestFilesystemModelRegistry:
         # Production checkpoint must remain untouched.
         assert (production_dir / "gating.pt").read_bytes() == b"prod-gating"
 
+    def test_load_production_real_checkpoint_predicts_successfully(self):
+        """RED→GREEN (maintainer decision, Batch 4): the real production
+        checkpoint's own `config.json` declares `gating_network.hidden_dims:
+        [48, 24]`, which diverges from `HWFP/models/config/model_config.yaml`'s
+        default `[32, 16]`. Before the fix, `load_production()` crashed with a
+        PyTorch `state_dict` size-mismatch (see apply-progress B3 Issue #1).
+        No monkeypatching of `FoulPredictionEnsemble.load` here — this is the
+        real, end-to-end load path against the real checkpoint on disk.
+        """
+        from HWFP.models.paths import default_checkpoints_dir
+        from HWFP.serving.adapters.filesystem_model_registry import (
+            FilesystemModelRegistry,
+        )
+        from HWFP.serving.adapters.pytorch_foul_model import PyTorchFoulModel
+
+        checkpoints = default_checkpoints_dir()
+        if not checkpoints.exists():
+            pytest.skip("Real checkpoints not available")
+
+        registry = FilesystemModelRegistry(checkpoints_dir=checkpoints)
+        model = registry.load_production()
+        assert isinstance(model, PyTorchFoulModel)
+
+        result = model.predict(_valid_features())
+        assert isinstance(result, FoulPMF)
+        assert abs(sum(result.pmf) - 1.0) <= 1e-6
+
+
+# ---------------------------------------------------------------------------
+# FoulPredictionEnsemble — checkpoint-authoritative architecture (Batch 4,
+# maintainer decision 1: checkpoint config.json overrides model_config.yaml
+# for architecture at load time)
+# ---------------------------------------------------------------------------
+
+
+class TestFoulPredictionEnsembleCheckpointConfig:
+    def test_read_checkpoint_config_returns_json_contents_when_present(
+        self, tmp_path
+    ):
+        import json
+
+        from HWFP.models.ensemble import FoulPredictionEnsemble
+
+        (tmp_path / "config.json").write_text(
+            json.dumps({"gating_network": {"hidden_dims": [4, 2]}})
+        )
+
+        result = FoulPredictionEnsemble._read_checkpoint_config(tmp_path)
+        assert result == {"gating_network": {"hidden_dims": [4, 2]}}
+
+    def test_read_checkpoint_config_returns_empty_dict_when_absent(self, tmp_path):
+        from HWFP.models.ensemble import FoulPredictionEnsemble
+
+        result = FoulPredictionEnsemble._read_checkpoint_config(tmp_path)
+        assert result == {}
+
+    def test_load_rebuilds_gating_architecture_from_checkpoint_config(
+        self, tmp_path
+    ):
+        """Triangulation: a checkpoint saved with a non-default gating
+        architecture ([4, 2] hidden dims, vs. the [32, 16] default) must
+        load successfully into a freshly-constructed default-config
+        ensemble — proving `load()` rebuilds architecture from the
+        checkpoint's `config.json` rather than trusting the config it was
+        constructed with. Real `save()`/`load()`, no monkeypatching.
+        """
+        import json
+
+        from HWFP.models.ensemble import FoulPredictionEnsemble
+
+        small_config = {"gating_network": {"hidden_dims": [4, 2]}}
+        source = FoulPredictionEnsemble(config=small_config)
+        # Normalization stats default to None until fit() runs; fill with
+        # dummy arrays so save()/load() round-trips as a real trained
+        # checkpoint would (this batch tests architecture selection, not
+        # training — the actual values are irrelevant here).
+        source.layer_regression._feature_means = np.zeros(3)
+        source.layer_regression._feature_stds = np.ones(3)
+        source.layer_anfis._feature_mins = np.zeros(3)
+        source.layer_anfis._feature_maxs = np.ones(3)
+        source.save(tmp_path)
+        (tmp_path / "config.json").write_text(json.dumps(small_config))
+
+        target = FoulPredictionEnsemble()  # default config: hidden_dims [32, 16]
+        target.load(tmp_path)
+
+        gating_layers = [
+            layer for layer in target.weighter.gating.net if hasattr(layer, "out_features")
+        ]
+        assert gating_layers[0].out_features == 4
+        assert gating_layers[1].out_features == 2
+
 
 # ---------------------------------------------------------------------------
 # PyTorchFoulModel

@@ -780,8 +780,42 @@ class FoulPredictionEnsemble:
         if self.calibration._is_fitted:
             self.calibration.save(directory / "calibration.npz")
 
+    @staticmethod
+    def _read_checkpoint_config(directory: str | Path) -> dict:
+        """Read the architecture-authoritative `config.json` from a checkpoint dir.
+
+        The checkpoint's own `config.json` (written at training time) is the
+        source of truth for model ARCHITECTURE (e.g. gating network
+        `hidden_dims`) at load time. `model_config.yaml` only supplies
+        training-time defaults for constructing a *new* ensemble before it
+        has ever been trained — it must never override a trained
+        checkpoint's declared shape.
+
+        Returns:
+            The parsed config dict, or `{}` when no `config.json` is present
+            (legacy checkpoints that predate config persistence).
+        """
+        config_path = Path(directory) / "config.json"
+        if not config_path.exists():
+            return {}
+        import json
+
+        with open(config_path) as f:
+            return json.load(f)
+
     def load(self, directory: str | Path):
         directory = Path(directory)
+
+        checkpoint_config = self._read_checkpoint_config(directory)
+        if checkpoint_config:
+            # Rebuild every sub-component's architecture from the
+            # checkpoint's own config before loading its weights, so a
+            # checkpoint trained with different hyperparameters (e.g.
+            # gating_network.hidden_dims) than the current
+            # model_config.yaml default never crashes on state_dict shape
+            # mismatch (maintainer decision: checkpoint config.json is
+            # authoritative for architecture at load time).
+            self.__init__(config=checkpoint_config)
 
         self.referee_profiler.load(directory / "referee")
         self.weighter.load(str(directory / "gating.pt"))
