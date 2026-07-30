@@ -158,3 +158,6 @@ logs/
 .cursor/
 .openai/
 
+
+# Local CodeGraph index
+.codegraph/
