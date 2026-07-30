@@ -1,8 +1,8 @@
+"""Pytest configuration for HWFP/.
+
+No `sys.path` mutation here (REQ-14, architecture-boundaries): the repo root
+is already made importable via `pyproject.toml`'s `[tool.pytest.ini_options]
+pythonpath` setting, which pytest applies natively before collection.
+"""
+
 from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-_repo_root = str(Path(__file__).resolve().parent.parent)
-if _repo_root not in sys.path:
-    sys.path.insert(0, _repo_root)

@@ -2,6 +2,16 @@
 
 REQ-10: HWFP/core/ must not import from HWFP.serving.* or HWFP.training.*
 REQ-11: HWFP/serving/ and HWFP/training/ must not cross-import each other.
+REQ-12: HWFP/models/ and HWFP/features/ are leaf packages — they must not
+        import HWFP.core, HWFP.serving, or HWFP.training.
+REQ-13: HWFP/core/ must not import HWFP.models or HWFP.features (core stays
+        independent of the leaf packages; adapters do the wiring).
+REQ-14: nothing under HWFP/ may import legacy top-level packages
+        (`src.*`, `prediction_models*`, `features_generator*`, bare
+        `assembly`/`transformation`), mutate `sys.path`, or traverse via
+        `Path(...).parents[3]`. Checked via AST (not text search) so that
+        docstrings merely *mentioning* these patterns (e.g. explaining why
+        they were removed) are never mistaken for real violations.
 """
 
 from __future__ import annotations
@@ -64,6 +74,76 @@ def _py_files(subdir: str):
     return (_HWFP_ROOT / subdir).rglob("*.py")
 
 
+def _all_hwfp_files():
+    """Every .py file under HWFP/, including conftest.py and top-level files."""
+    return _HWFP_ROOT.rglob("*.py")
+
+
+# REQ-14 banned import prefixes: legacy top-level packages this change absorbed
+# into HWFP.models/HWFP.features. NOT included: `selection` — the design
+# explicitly scopes REQ-14 to these four prefixes only (see architecture
+# design D2/REQ-14); `selection` is addressed separately via dependency
+# injection (HWFP.features.assembly.betting_odds.set_market_data_source),
+# not an import-boundary ban.
+_REQ14_BANNED_IMPORT_PREFIXES: tuple[str, ...] = (
+    "src",
+    "prediction_models",
+    "features_generator",
+    "assembly",
+    "transformation",
+)
+
+
+def _find_sys_path_insert_calls(tree: ast.AST) -> list[ast.Call]:
+    """AST-only detection of `sys.path.insert(...)` call expressions.
+
+    Deliberately AST-based (not text search): a text search for the literal
+    string "sys.path" would false-positive on docstrings that merely mention
+    the pattern while explaining it was removed (see HWFP/models/paths.py).
+    """
+    hits: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr == "insert"):
+            continue
+        target = func.value
+        if (
+            isinstance(target, ast.Attribute)
+            and target.attr == "path"
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "sys"
+        ):
+            hits.append(node)
+    return hits
+
+
+def _find_parents_index_3(tree: ast.AST) -> list[ast.Subscript]:
+    """AST-only detection of `<expr>.parents[3]` subscript expressions.
+
+    Deliberately AST-based (not text search): a text search for the literal
+    string "parents[3]" would false-positive on docstrings that mention the
+    pattern while explaining it was removed (see HWFP/models/paths.py's
+    module docstring, which documents replacing this exact pattern).
+    """
+    hits: list[ast.Subscript] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Subscript):
+            continue
+        value = node.value
+        if not (isinstance(value, ast.Attribute) and value.attr == "parents"):
+            continue
+        index_node = node.slice
+        # Python 3.9 wraps the subscript index in ast.Index; 3.9+ ast.Constant
+        # holds the literal either way once unwrapped.
+        if isinstance(index_node, ast.Index):  # pragma: no cover - py<3.9 shape
+            index_node = index_node.value
+        if isinstance(index_node, ast.Constant) and index_node.value == 3:
+            hits.append(node)
+    return hits
+
+
 def test_core_does_not_import_outer_layers() -> None:
     """REQ-10: nothing inside HWFP/core/ may import HWFP.serving.* or HWFP.training.*"""
     forbidden = ("HWFP.serving", "HWFP.training")
@@ -103,4 +183,96 @@ def test_serving_and_training_isolated() -> None:
 
     assert not violations, "Sibling-layer cross-imports detected:\n" + "\n".join(
         f"  [{src}] {path}  →  {mod}" for src, path, mod in violations
+    )
+
+
+def test_models_and_features_are_leaf_packages() -> None:
+    """REQ-12: HWFP/models/ and HWFP/features/ must not import HWFP.core,
+    HWFP.serving, or HWFP.training — they are leaf libraries with no
+    dependency on any HWFP layer.
+    """
+    forbidden = ("HWFP.core", "HWFP.serving", "HWFP.training")
+    violations: list[tuple[str, str]] = []
+
+    for src_dir in ("models", "features"):
+        for file in _py_files(src_dir):
+            for mod in _collect_imports(file):
+                if any(mod == f or mod.startswith(f + ".") for f in forbidden):
+                    violations.append((str(file), mod))
+
+    assert not violations, (
+        "HWFP.models/HWFP.features must stay leaf packages — violations:\n"
+        + "\n".join(f"  {path}  →  {mod}" for path, mod in violations)
+    )
+
+
+def test_core_does_not_import_models_or_features() -> None:
+    """REQ-13: HWFP/core/ must not import HWFP.models or HWFP.features —
+    core stays independent of the leaf packages; adapters do the wiring.
+    """
+    forbidden = ("HWFP.models", "HWFP.features")
+    violations: list[tuple[str, str]] = []
+
+    for file in _py_files("core"):
+        for mod in _collect_imports(file):
+            if any(mod == f or mod.startswith(f + ".") for f in forbidden):
+                violations.append((str(file), mod))
+
+    assert not violations, (
+        "core/ must not import the leaf packages — violations:\n"
+        + "\n".join(f"  {path}  →  {mod}" for path, mod in violations)
+    )
+
+
+def test_no_legacy_package_imports_under_hwfp() -> None:
+    """REQ-14 (imports half): zero imports of `src.*`, `prediction_models*`,
+    `features_generator*`, or bare top-level `assembly`/`transformation`
+    anywhere under HWFP/.
+    """
+    violations: list[tuple[str, str]] = []
+
+    for file in _all_hwfp_files():
+        for mod in _collect_imports(file):
+            if any(
+                mod == prefix or mod.startswith(prefix + ".")
+                for prefix in _REQ14_BANNED_IMPORT_PREFIXES
+            ):
+                violations.append((str(file), mod))
+
+    assert not violations, "Legacy top-level package imports detected:\n" + "\n".join(
+        f"  {path}  →  {mod}" for path, mod in violations
+    )
+
+
+def test_no_sys_path_mutation_under_hwfp() -> None:
+    """REQ-14 (sys.path half): zero `sys.path.insert(...)` calls anywhere
+    under HWFP/, detected via AST (immune to docstring false positives).
+    """
+    violations: list[str] = []
+
+    for file in _all_hwfp_files():
+        tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+        if _find_sys_path_insert_calls(tree):
+            violations.append(str(file))
+
+    assert not violations, "sys.path.insert() calls detected:\n" + "\n".join(
+        f"  {path}" for path in violations
+    )
+
+
+def test_no_parents_3_traversal_under_hwfp() -> None:
+    """REQ-14 (path-traversal half): zero `<expr>.parents[3]` repo-root
+    traversals anywhere under HWFP/, detected via AST (immune to docstring
+    false positives — e.g. HWFP/models/paths.py's docstring documents
+    *replacing* this exact pattern and must not trip the scan).
+    """
+    violations: list[str] = []
+
+    for file in _all_hwfp_files():
+        tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+        if _find_parents_index_3(tree):
+            violations.append(str(file))
+
+    assert not violations, "`.parents[3]` traversal detected:\n" + "\n".join(
+        f"  {path}" for path in violations
     )
