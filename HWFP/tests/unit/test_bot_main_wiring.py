@@ -25,14 +25,15 @@ TDD cycle:
           `get_state` with no configured data source raises RuntimeError).
 
 Fakes only: this test never exercises the real `HWFP.features` pipeline
-(`PyTorchFeatureBuilder`/`build_features`), because that pipeline currently
-has an unrelated, pre-existing, out-of-scope defect for this batch — it
-hardcodes `skip_market_fetch=False`, which reaches a legacy
-`from selection.odds_client import ...` call-time import that no longer
-resolves post-absorption (flagged in Batch 2 Issue #2 as a Batch 6-awareness
-item, not assigned to this batch). Using `FakeFeatureBuilder` +
-`FakeModelRegistry` keeps this test hermetic and fast while still proving
-`build_container()`'s wiring is correct end-to-end.
+(`PyTorchFeatureBuilder`/`build_features`) end-to-end against a live market
+data source. `PyTorchFeatureBuilder` now defaults `skip_market_fetch=True`
+(Batch 6 fix — see `test_model_adapters.py::TestPyTorchFeatureBuilder` and
+`HWFP.features.assembly.betting_odds.set_market_data_source`), so real
+feature builds no longer crash; a real Supabase-backed market-odds fetcher
+still has not been wired at composition time (tracked alongside the
+Supabase env-var gap below). Using `FakeFeatureBuilder` + `FakeModelRegistry`
+keeps this test hermetic and fast while still proving `build_container()`'s
+wiring is correct end-to-end.
 """
 
 from __future__ import annotations

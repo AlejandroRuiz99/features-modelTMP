@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Optional
 
 from HWFP.features.core.utils import (
     dedupe_dicts,
@@ -194,6 +195,58 @@ def _extract_odds_entries(
 
 
 # ---------------------------------------------------------------------------
+# Market data source (composition-root DI point)
+# ---------------------------------------------------------------------------
+#
+# D1 (architecture-boundaries, REQ-12/14): this leaf module must not depend
+# on `selection.odds_client` (a legacy Supabase adapter never reachable as a
+# top-level import outside of pytest's `pythonpath` config — see the module
+# docstring on HWFP.features.core.state_cache for the identical pattern).
+# The real market-odds fetcher is wired by the composition root via
+# `set_market_data_source(fn)`; without one, `build_market_category()` fails
+# with an explicit, actionable RuntimeError instead of a cryptic
+# ModuleNotFoundError/network error reaching into a package that was never
+# importable in production.
+
+MarketFetchFn = Callable[
+    ..., tuple[list[dict[str, Any]], Optional[str], Optional[str]]
+]
+
+_market_fetch_fn: MarketFetchFn | None = None
+
+
+def set_market_data_source(fn: MarketFetchFn) -> None:
+    """Injects the callable that fetches raw odds rows for a match.
+
+    The composition root wires the real adapter here (e.g. a Supabase-backed
+    fetcher); tests wire a stub. This keeps the leaf `HWFP.features` package
+    free of any dependency on a concrete odds-fetching implementation.
+
+    The callable's signature must match
+    `(scores, eq_local, eq_visit, *, match_date=None) -> (rows, scraped_at, event_id)`.
+    """
+    global _market_fetch_fn
+    _market_fetch_fn = fn
+
+
+def _fetch_match_odds_rows(
+    scores: dict[str, Any],
+    eq_local: str,
+    eq_visit: str,
+    *,
+    match_date: str | None = None,
+) -> tuple[list[dict[str, Any]], str | None, str | None]:
+    if _market_fetch_fn is None:
+        raise RuntimeError(
+            "No market data source configured for "
+            "HWFP.features.assembly.betting_odds. Call "
+            "set_market_data_source(fn) from the composition root before "
+            "build_market_category() is invoked with skip_market_fetch=False."
+        )
+    return _market_fetch_fn(scores, eq_local, eq_visit, match_date=match_date)
+
+
+# ---------------------------------------------------------------------------
 # Funciones publicas
 # ---------------------------------------------------------------------------
 
@@ -276,16 +329,7 @@ def build_market_category(
     Returns:
         (market_category, market_input_model, mercados_usados, scraped_at)
     """
-    # Deferred import: `selection` is a legacy top-level package outside the
-    # HWFP.features leaf (not moved per design D2) and is only reachable when
-    # `features_generator` is explicitly on sys.path (e.g. via pytest's
-    # `pythonpath` config). Importing it lazily here means HWFP.features stays
-    # fully importable (and skip_market_fetch=True callers fully functional)
-    # without that legacy path -- real market-fetch wiring is deferred to a
-    # later batch's composition root.
-    from selection.odds_client import get_match_odds_rows
-
-    rows, scraped_at, event_id = get_match_odds_rows(
+    rows, scraped_at, event_id = _fetch_match_odds_rows(
         scores, eq_local, eq_visit, match_date=match_date
     )
 

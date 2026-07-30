@@ -459,3 +459,42 @@ class TestPyTorchFeatureBuilder:
         assert call_kwargs["equipo_local_input"] == "Real Madrid"
         assert call_kwargs["equipo_visitante_input"] == "Barcelona"
         assert call_kwargs["arbitro_input"] == "DE BURGOS BENGOETXEA"
+
+    def test_skip_market_fetch_defaults_to_true(self) -> None:
+        """Session-scoped fix (Batch 6): skip_market_fetch must be
+        composition-controlled, not hardcoded False. A safe default of True
+        means every real feature build works out of the box without a
+        market data source wired (see betting_odds.set_market_data_source).
+        Before this fix, the constructor had no such parameter at all and
+        `build()` always forwarded `skip_market_fetch=False`.
+        """
+        flat = {k: 0.0 for k in CANONICAL_FEATURE_KEYS}
+        fake = MagicMock(return_value=flat)
+
+        from HWFP.serving.adapters.pytorch_feature_builder import PyTorchFeatureBuilder
+
+        builder = PyTorchFeatureBuilder(state_provider_fn=lambda: {"state": True})
+        builder._build_features = fake
+
+        builder.build(_make_match(), _make_team_state("Real Madrid"), _make_team_state("Barcelona"))
+
+        assert fake.call_args.kwargs["skip_market_fetch"] is True
+
+    def test_skip_market_fetch_can_be_explicitly_disabled(self) -> None:
+        """Triangulation: composition can opt back into real market-fetch
+        wiring once a data source is configured (different input than the
+        default-True case above must produce a different forwarded value).
+        """
+        flat = {k: 0.0 for k in CANONICAL_FEATURE_KEYS}
+        fake = MagicMock(return_value=flat)
+
+        from HWFP.serving.adapters.pytorch_feature_builder import PyTorchFeatureBuilder
+
+        builder = PyTorchFeatureBuilder(
+            state_provider_fn=lambda: {"state": True}, skip_market_fetch=False
+        )
+        builder._build_features = fake
+
+        builder.build(_make_match(), _make_team_state("Real Madrid"), _make_team_state("Barcelona"))
+
+        assert fake.call_args.kwargs["skip_market_fetch"] is False
