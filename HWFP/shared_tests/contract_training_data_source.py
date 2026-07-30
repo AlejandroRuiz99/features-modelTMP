@@ -6,14 +6,43 @@ import pytest
 
 from HWFP.core.domain.training_example import TrainingExample
 
+_FIXTURE_ROWS = [
+    {
+        "date": "2023-08-11",
+        "season": "2023-24",
+        "home_team": "Barcelona",
+        "away_team": "Getafe",
+        "referee": "Munuera Montero",
+        "is_derby": False,
+        "matchday": 1,
+        "fouls_total": 24.0,
+    },
+    {
+        "date": "2023-08-12",
+        "season": "2023-24",
+        "home_team": "Sevilla",
+        "away_team": "Valencia",
+        "referee": "Hernandez Hernandez",
+        "is_derby": False,
+        "matchday": 1,
+        "fouls_total": 28.0,
+    },
+]
 
-@pytest.fixture(params=["fake", "stub"], ids=["fake", "stub"])
-def training_data_source(request):
+
+@pytest.fixture(params=["fake", "real"], ids=["fake", "real"])
+def training_data_source(request, tmp_path):
     if request.param == "fake":
         mod = pytest.importorskip("HWFP.training.fakes.fake_training_data_source")
         return mod.FakeTrainingDataSource()
-    pytest.importorskip("HWFP.training.adapters.csv_training_data_source")
-    pytest.skip("stub_adapter: raises NotImplementedError by design")
+    mod = pytest.importorskip(
+        "HWFP.training.adapters.parquet_training_data_source"
+    )
+    import pandas as pd
+
+    path = tmp_path / "contract_training_fixture.parquet"
+    pd.DataFrame(_FIXTURE_ROWS).to_parquet(path)
+    return mod.ParquetTrainingDataSource(path)
 
 
 def test_iter_examples_yields_training_examples(training_data_source):
@@ -36,10 +65,3 @@ def test_iter_examples_is_repeatable(training_data_source):
     first = list(training_data_source.iter_examples())
     second = list(training_data_source.iter_examples())
     assert first == second
-
-
-def test_training_data_source_stub_raises_not_implemented():
-    mod = pytest.importorskip("HWFP.training.adapters.csv_training_data_source")
-    adapter = mod.CsvTrainingDataSource()
-    with pytest.raises(NotImplementedError):
-        adapter.dataset_hash()

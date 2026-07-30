@@ -10,6 +10,7 @@ from HWFP.core.domain.calibration import (
 from HWFP.core.domain.confidence_score import ConfidenceLevel, ConfidenceScore
 from HWFP.core.domain.ev_result import EVResult
 from HWFP.core.domain.exceptions import DomainValidationError
+from HWFP.core.domain.feature_keys import CANONICAL_FEATURE_KEYS
 from HWFP.core.domain.feature_vector import FeatureVector
 from HWFP.core.domain.foul_pmf import FoulPMF
 from HWFP.core.domain.line_movement import LineMovement
@@ -36,6 +37,7 @@ __all__ = [
     "CalibrationEvent",
     "CalibrationParams",
     "CalibrationStatus",
+    "CANONICAL_FEATURE_KEYS",
     "ConfidenceLevel",
     "ConfidenceScore",
     "DomainValidationError",

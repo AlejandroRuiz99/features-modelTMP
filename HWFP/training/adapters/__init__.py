@@ -1,11 +1,13 @@
-"""Training adapter stubs — re-export all stub classes."""
+"""Training adapters — production TrainingDataSource and ModelTrainer implementations."""
 
 from __future__ import annotations
 
-from HWFP.training.adapters.csv_training_data_source import CsvTrainingDataSource
+from HWFP.training.adapters.parquet_training_data_source import (
+    ParquetTrainingDataSource,
+)
 from HWFP.training.adapters.pytorch_model_trainer import PyTorchModelTrainer
 
 __all__ = [
-    "CsvTrainingDataSource",
+    "ParquetTrainingDataSource",
     "PyTorchModelTrainer",
 ]

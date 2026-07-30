@@ -1,0 +1,95 @@
+"""Canonical numeric feature key ordering shared by serving and training.
+
+Defines the exact sequence of keys extracted from the legacy build_features()
+flat dict to form a FeatureVector, and their reverse mapping back to a match
+dict. String fields (home_team, away_team, referee, season, date,
+intensidad_esperada, riesgo_disciplinario) are excluded — they carry no
+canonical numeric feature and are reconstructed with defaults where needed.
+
+Lives in `HWFP.core.domain` (not `HWFP.serving`) because the training layer
+(`HWFP.training.adapters.parquet_training_data_source`) also needs this exact
+ordering to build `TrainingExample.features`, and REQ-11 (architecture
+boundaries) forbids direct `HWFP.serving` <-> `HWFP.training` imports. Core is
+importable by both without violating any layering rule.
+"""
+
+from __future__ import annotations
+
+CANONICAL_FEATURE_KEYS: tuple[str, ...] = (
+    "matchday",
+    "home_fouls_committed_avg",
+    "home_fouls_suffered_avg",
+    "away_fouls_committed_avg",
+    "away_fouls_suffered_avg",
+    "home_fouls_committed_curr",
+    "away_fouls_committed_curr",
+    "home_shots_curr",
+    "away_shots_curr",
+    "home_corners_curr",
+    "away_corners_curr",
+    "home_yellows_avg",
+    "away_yellows_avg",
+    "home_reds_avg",
+    "away_reds_avg",
+    "home_rank_hist",
+    "away_rank_hist",
+    "home_rank_curr",
+    "away_rank_curr",
+    "rank_diff_norm",
+    "season_phase",
+    "is_derby",
+    "pace_index_curr",
+    "home_possession",
+    "away_possession",
+    "home_xg",
+    "away_xg",
+    "xg_diff",
+    "xfouls_home",
+    "xfouls_away",
+    "aggressiveness_volume_home",
+    "aggressiveness_volume_away",
+    "aggressiveness_norm_total",
+    "fouls_provoked_home",
+    "fouls_provoked_away",
+    "forma_fouls_home",
+    "forma_fouls_away",
+    "urgency_home",
+    "urgency_away",
+    "momentum_home",
+    "momentum_away",
+    "fatigue_home",
+    "fatigue_away",
+    "days_rest_home",
+    "days_rest_away",
+    "xfouls_factor_home",
+    "xfouls_factor_away",
+    "referee_mu_permisivo",
+    "referee_mu_estricto",
+    "referee_sigma_permisivo",
+    "referee_sigma_estricto",
+    "referee_peso_estricto",
+    "referee_n_partidos",
+    "referee_is_shrunk",
+    "ref_home_delta",
+    "ref_away_delta",
+    "ref_pair_delta_sum",
+    "ref_pair_samples",
+    "has_market_odds",
+    "market_home_win_prob",
+    "market_draw_prob",
+    "market_away_win_prob",
+    "market_favorite_prob",
+    "market_balance",
+    "market_entropy",
+    "market_ou25_over_prob",
+    "market_ou25_under_prob",
+    "foul_market_prob_over",
+    "foul_market_implied_mean",
+    "referee_clean_avg",
+    "referee_avg_fouls",
+    "referee_home_bias",
+    "referee_team_committed_home",
+    "referee_team_committed_away",
+    "h2h_faltas_media",
+    "h2h_partidos",
+)
